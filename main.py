@@ -150,6 +150,7 @@ class Trader:
 
                             print("TRYING TO BUY", product, str(possibleQuantity) + "x", order)
                             orders.append(Order(product, order, possibleQuantity))
+                            currentProductAmount += possibleQuantity # the trade will succeed, so assume it has
 
 
                 # The below code block is similar to the one above,
@@ -183,9 +184,18 @@ class Trader:
 
                             print("TRYING TO SELL", product, str(possibleQuantity) + "x", order)
                             orders.append(Order(product, order, possibleQuantity))
+                            currentProductAmount += possibleQuantity # the trade will succeed, so assume it has
 
                 # Add all the above orders to the result dict
                 result[product] = orders
+
+
+                # print("Market High", product, str(possibleQuantity) + "x", order)
+                # orders.append(Order(product, order, possibleQuantity))
+                # currentProductAmount += possibleQuantity
+
+
+
 
                 # Return the dict of orders
                 # These possibly contain buy or sell orders for PEARLS
