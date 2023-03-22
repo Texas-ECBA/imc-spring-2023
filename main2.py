@@ -287,18 +287,19 @@ class Trader:
         """Trades until it hits a certain volume traded, optional min/max trading price
         Returns a list of orders made and a tuple of last price traded at, total volume traded, 
         and if it filled the final order it traded at"""
+        volume = abs(volume)
         ordersMade = []
         orderBook = state.order_depths[product]
         TradeFill = True
         PriceTraded = 0
         VolumeTraded = 0
         if buy:
-            prices = sorted(orderBook.buy_orders.keys(), reverse=True)
+            prices = sorted(orderBook.sell_orders.keys(), reverse=False)
             vol = 0
             i = 0
             while vol < volume and i < len(prices):
                 if priceLimit and prices[i] > priceLimit: break
-                quantity = orderBook.buy_orders[prices[i]]
+                quantity = orderBook.sell_orders[prices[i]]
                 volOrdered = quantity
                 if (volOrdered + vol > volume): 
                     volOrdered = volume - vol
@@ -309,53 +310,61 @@ class Trader:
                 i += 1
             return ordersMade, (PriceTraded, VolumeTraded, TradeFill)
         else:
-
-
-
-
-            prices = sorted(orderBook.sell_orders.keys(), reverse=False)
+            prices = sorted(orderBook.buy_orders.keys(), reverse=True)
             vol = 0
             i = 0
-            while abs(vol) < volume and i < len(prices):
+            while vol < volume and i < len(prices):
                 if priceLimit and prices[i] < priceLimit: break
-                quantity = orderBook.sell_orders[prices[i]]
+                quantity = -orderBook.buy_orders[prices[i]]
                 volOrdered = quantity
-                if (abs(volOrdered + vol) > volume): 
-                    volOrdered = volume + vol
+                if (volOrdered + vol > volume): 
+                    volOrdered = volume - vol
                     TradeFill = False
-                ordersMade.append(Order(product, prices[i], volOrdered))
+                ordersMade.append(Order(product, prices[i], -volOrdered))
                 VolumeTraded += volOrdered
                 PriceTraded = prices[i]
                 i += 1
-            return ordersMade, (PriceTraded, VolumeTraded, TradeFill)
+            return ordersMade, (PriceTraded, -VolumeTraded, TradeFill)
 
-
-
-
-
-            pass
     
-    def LimitOrder(self, product, buy : int, state : TradingState, price = 0, volume = 0):
-        """"Buy/Sell an item, set price/volume to 0 to ignore, returns _________"""
+    def PriceOrder(self, product, buy : int, state : TradingState, price : int, volumeLimit = 0):
+        """Trades best prices until price hit (inclusive), optional max volume traded
+        Returns a list of orders made and a tuple of last price traded at, total volume traded, 
+        and if it filled the final order it traded at"""
+        volumeLimit = abs(volumeLimit)
+        ordersMade = []
         orderBook = state.order_depths[product]
-        currentPos = state.position[product]
+        TradeFill = True
+        PriceTraded = 0
+        VolumeTraded = 0
         if buy:
-            prices = sorted(orderBook.sell_orders.keys(), reverse=True)
+            prices = sorted(orderBook.sell_orders.keys(), reverse=False)
             vol = 0
-            for x in prices:
-                if price and x > price:
-                    break
-                if volume and vol == volume:
-                    break
-
-
-                   
-
-
-            pass
+            for listing in prices:
+                if listing > price: break
+                volOrdered = quantity = orderBook.sell_orders[listing]
+                if volumeLimit:
+                    if vol + quantity > volumeLimit:
+                        volOrdered = volumeLimit - vol
+                        TradeFill = False
+                ordersMade.append(Order(product, listing, volOrdered))
+                vol += volOrdered
+                PriceTraded = listing
+            return ordersMade, (PriceTraded, VolumeTraded, TradeFill)
         else:
-            pass
-
+            prices = sorted(orderBook.buy_orders.keys(), reverse=True)
+            vol = 0
+            for listing in prices:
+                if listing < price: break
+                volOrdered = quantity = orderBook.sell_orders[listing]
+                if volumeLimit:
+                    if vol + quantity > volumeLimit:
+                        volOrdered = volumeLimit - vol
+                        TradeFill = False
+                ordersMade.append(Order(product, listing, -volOrdered))
+                vol += volOrdered
+                PriceTraded = listing
+            return ordersMade, (PriceTraded, -VolumeTraded, TradeFill)
         
 
     

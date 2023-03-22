@@ -9,8 +9,8 @@ Product = str
 Position = int
 UserId = str
 Observation = int
-SELL = 0
-BUY = 1
+Sell = 0
+Buy = 1
 
 
 class Listing:
@@ -251,43 +251,69 @@ class Trader:
 
             # Check if the current product is the 'PEARLS' product, only then run the order logic
             if product == 'PEARLS':
+                
 
+                # If statement checks if there are any SELL orders in the PEARLS market
                 if len(order_depth.sell_orders) > 0:
 
+                    # Go through all the orders and match all favorable orders
                     print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
-                    if currentProductAmount != 20:
-                        BuyOrders = self.PriceOrder(product, BUY, state, 10000, 20 - currentProductAmount)
-                        for x in BuyOrders[0]:
-                            orders.append(x)
-                        currentProductAmount += BuyOrders[1][1]
-                        BestSell = BuyOrders[1][3]
-                    else:
-                        BestSell = sorted(order_depth.sell_orders.keys(), reverse=False) [-1]
+
+                    # Loop through all the sell orders, but first sorted by price descending
+                    # sell_orders is a dictionary with price as key and quantity as value
+                    possiblePrices = sorted(order_depth.sell_orders.keys(), reverse=True)
+
+                    for price in possiblePrices:
+                        if price < Trader.pearl_acceptable_price - Trader.pearlGreediness:
+
+                            # In case the lowest ask is lower than our fair value,
+                            # This presents an opportunity for us to buy cheaply
+                            # The code below therefore sends a BUY order at the price level of the ask,
+                            # with the same quantity
+                            # We expect this order to trade with the sell order
+                            possibleQuantity: int = -1 * order_depth.sell_orders[price]
+                            if possibleQuantity + currentProductAmount > self.maxPositionQuantity:
+                                possibleQuantity = self.maxPositionQuantity - currentProductAmount
+
+                            print("TRYING TO BUY", product, str(possibleQuantity) + "x", price)
+                            orders.append(Order(product, price, possibleQuantity))
+                            currentProductAmount += possibleQuantity # the trade will succeed, so assume it has
 
 
+                # The below code block is similar to the one above,
+                # the difference is that it finds the highest bid (buy order)
+                # If the price of the order is higher than the fair value
+                # This is an opportunity to sell at a premium
                 if len(order_depth.buy_orders) != 0:
+                    # best_bid = max(order_depth.buy_orders.keys())
+                    # best_bid_volume = order_depth.buy_orders[best_bid]
+                    # if best_bid >= acceptable_price:
+                    #     print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS BUY ORDERS: ", state.order_depths[product].buy_orders)
+
+                    #     print("SELL", product, str(best_bid_volume) + "x", best_bid)
+                    #     orders.append(Order(product, best_bid, -best_bid_volume))
 
                     print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS BUY ORDERS: ", state.order_depths[product].buy_orders)
-                    if currentProductAmount != -20:
-                        SellOrders = self.PriceOrder(product, SELL, state, 10000, 20 - currentProductAmount)
-                        for x in SellOrders[0]:
-                            orders.append(x)
-                        currentProductAmount += SellOrders[1][1]
-                        BestBuy = SellOrders[1][3]
-                    else:
-                        BestBuy = sorted(order_depth.buy_orders.keys(), reverse=True) [-1]
 
-                print("Current Market is", BestBuy, "-", BestSell)
-                if BestBuy < 9999 or BestBuy < 10000 and currentProductAmount > 0:
-                    BestBuy += .1
-                    if currentProductAmount < 15:
-                        orders.append(Order(product, BestBuy, 15-currentProductAmount))
-                        print("Placed Buy order of", 15-currentProductAmount, product, "for", BestBuy)
-                if BestSell > 10001 or BestBuy > 10000 and currentProductAmount < 0:
-                    BestSell -= .1
-                    if currentProductAmount > -15:
-                        orders.append(Order(product, BestSell, -15-currentProductAmount))
-                        print("Placed Sell order of", -15-currentProductAmount, product, "for", BestSell)        
+                    possiblePrices: list[int] = sorted(order_depth.buy_orders.keys(), reverse=False)
+
+                    for price in possiblePrices:
+                        if price > Trader.pearl_acceptable_price + Trader.pearlGreediness:
+
+                            # In case the lowest ask is lower than our fair value,
+                            # This presents an opportunity for us to buy cheaply
+                            # The code below therefore sends a BUY order at the price level of the ask,
+                            # with the same quantity
+                            # We expect this order to trade with the sell order
+                            possibleQuantity: int = -1 * order_depth.buy_orders[price] # some negative number
+                            if possibleQuantity + currentProductAmount < -1 * self.maxPositionQuantity:
+                                possibleQuantity = -1 * self.maxPositionQuantity - currentProductAmount
+
+                            print("TRYING TO SELL", product, str(possibleQuantity) + "x", price)
+                            orders.append(Order(product, price, possibleQuantity))
+                            currentProductAmount += possibleQuantity # the trade will succeed, so assume it has
+
+            
             
             # Add all the above orders to the result dict            
             result[product] = orders
@@ -295,101 +321,36 @@ class Trader:
         return result
     
 
-    def VolumeOrder (self, product, buy : int, state : TradingState, volume : int, priceLimit = 0):
-        """Trades until it hits a certain volume traded, optional min/max trading price
-        Returns a list of orders made and a tuple of last price traded at, total volume traded, 
-        and if it filled the final order it traded at"""
-        volume = abs(volume)
-        ordersMade = []
-        orderBook = state.order_depths[product]
-        TradeFill = True
-        PriceTraded = 0
-        VolumeTraded = 0
-        if buy:
-            prices = sorted(orderBook.sell_orders.keys(), reverse=False)
-            i = 0
-            while VolumeTraded < volume and i < len(prices):
-                if priceLimit and prices[i] > priceLimit: break
-                quantity = orderBook.sell_orders[prices[i]]
-                volOrdered = quantity
-                if (volOrdered + VolumeTraded > volume): 
-                    volOrdered = volume - VolumeTraded
-                    TradeFill = False
-                print("BUYING", product, str(volOrdered) + "x", prices[i])
-                ordersMade.append(Order(product, prices[i], volOrdered))
-                VolumeTraded += volOrdered
-                PriceTraded = prices[i]
-                i += 1
-            if not(TradeFill): nextBest = PriceTraded
-            elif i < len(prices): nextBest = prices[i]
-            else: nextBest = None
-            return ordersMade, (PriceTraded, VolumeTraded, TradeFill, nextBest)
-        else:
-            prices = sorted(orderBook.buy_orders.keys(), reverse=True)
-            VolumeTraded = 0
-            i = 0
-            while VolumeTraded < volume and i < len(prices):
-                if priceLimit and prices[i] < priceLimit: break
-                quantity = -orderBook.buy_orders[prices[i]]
-                volOrdered = quantity
-                if (volOrdered + VolumeTraded > volume): 
-                    volOrdered = volume - VolumeTraded
-                    TradeFill = False
-                print("SELLING", product, str(-volOrdered) + "x", prices[i])
-                ordersMade.append(Order(product, prices[i], -volOrdered))
-                VolumeTraded += volOrdered
-                PriceTraded = prices[i]
-                i += 1
-            if not(TradeFill): nextBest = PriceTraded
-            elif i < len(prices): nextBest = prices[i]
-            else: nextBest = None
-            return ordersMade, (PriceTraded, -VolumeTraded, TradeFill, nextBest)
+    # def buyItem(self, product, order_depth: OrderDepth, ):
+    #     possibleQuantity: int = -1 * order_depth.sell_orders[order]
+    #     if possibleQuantity + currentProductAmount > self.maxPositionQuantity:
+    #         possibleQuantity = self.maxPositionQuantity - currentProductAmount
 
-    
-    def PriceOrder(self, product, buy : int, state : TradingState, price : int, volumeLimit = 0):
-        """Trades best prices until price hit (inclusive), optional max volume traded
-        Returns a list of orders made and a tuple of last price traded at, total volume traded, 
-        and if it filled the final order it traded at"""
-        volumeLimit = abs(volumeLimit)
-        ordersMade = []
+
+    #     print("TRYING TO BUY", product, str(possibleQuantity) + "x", order)
+    #     orders.append(Order(product, order, possibleQuantity))
+    #     possiblePrices.remove(order)
+    #     currentProductAmount += possibleQuantity
+
+    def LimitOrder(self, product, buy : int, state : TradingState, price = 0, volume = 0):
+        """"Buy/Sell an item, set price/volume to 0 to ignore, returns _________"""
         orderBook = state.order_depths[product]
-        TradeFill = True
-        PriceTraded = 0
-        VolumeTraded = 0
+        currentPos = state.position[product]
         if buy:
-            prices = sorted(orderBook.sell_orders.keys(), reverse=False)
-            for listing in prices:
-                if listing > price: break
-                volOrdered = abs(orderBook.sell_orders[listing])
-                if volumeLimit:
-                    if VolumeTraded + volOrdered > volumeLimit:
-                        volOrdered = volumeLimit - VolumeTraded
-                        TradeFill = False
-                print("BUYING", product, str(volOrdered) + "x", listing)
-                ordersMade.append(Order(product, listing, volOrdered))
-                VolumeTraded += volOrdered
-                PriceTraded = listing
-            if not(TradeFill): nextBest = PriceTraded
-            elif listing != PriceTraded: nextBest = listing
-            else: nextBest = None
-            return ordersMade, (PriceTraded, VolumeTraded, TradeFill, nextBest)
+            prices = sorted(orderBook.sell_orders.keys(), reverse=True)
+            vol = 0
+            # for x in prices:
+            #     if price and x > price:
+            #         break
+            #     if volume and vol < volume:
+            #       
+
+
+            pass
         else:
-            prices = sorted(orderBook.buy_orders.keys(), reverse=True)
-            for listing in prices:
-                if listing < price: break
-                volOrdered = orderBook.buy_orders[listing]
-                if volumeLimit:
-                    if VolumeTraded + volOrdered > volumeLimit:
-                        volOrdered = volumeLimit - VolumeTraded
-                        TradeFill = False
-                print("SELLING", product, str(-volOrdered) + "x", listing)
-                ordersMade.append(Order(product, listing, -volOrdered))
-                VolumeTraded += volOrdered
-                PriceTraded = listing
-            if not(TradeFill): nextBest = PriceTraded
-            elif listing != PriceTraded: nextBest = listing
-            else: nextBest = None
-            return ordersMade, (PriceTraded, -VolumeTraded, TradeFill, nextBest)
+            pass
+
+        
 
     
     def getBestPossiblePrice(self, order_depth: OrderDepth, isBuying: bool, offset: int = 0) -> int:
