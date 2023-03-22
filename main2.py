@@ -78,26 +78,21 @@ class Trader:
     maxPositionQuantity: int = 20
     bananasSimpleMovingAverage: List[int] = []
     bananasVelocityMovingAverage: List[int] = []
-    pearlsSimpleMovingAverage: List[int] = []
-    pearlsVelocityMovingAverage: List[int] = []
 
     # CONFIGURABLE PARAMETERS
-    smaSize: int = 10
-    stddevThreshold: float = 0.5
-    pearlGreediness: float = 0    
-    # Define a fair value for the PEARLS.
-    pearl_acceptable_price = 10000
+    bananasSimpleMovingAverageSize: int = 10
+    bananasSTDDEVThreshold: float = 0.5
     # ignored for now
     bananasQuantityAffinity: int = 2
 
-    """
-    Only method required. It takes all buy and sell orders for all symbols as an input,
-    and outputs a list of orders to be sent
-    """
+
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
         if (len(self.bananasSimpleMovingAverage) == 0):
-            print("OPERATING WITH SMASIZE ", self.smaSize, "AND STDDEVTHRESHOLD ", self.stddevThreshold, "AND PEARLGREEDINESS ", self.pearlGreediness)
-        
+            print("OPERATING WITH SMASIZE ", self.bananasSimpleMovingAverageSize, "AND STDDEVTHRESHOLD ", self.bananasSTDDEVThreshold)
+        """
+        Only method required. It takes all buy and sell orders for all symbols as an input,
+        and outputs a list of orders to be sent
+        """
         # Initialize the method output dict as an empty dict
         result = {}
 
@@ -115,25 +110,27 @@ class Trader:
 
             # Retrieve the Order Depth containing all the market BUY and SELL orders for PEARLS
             order_depth: OrderDepth = state.order_depths[product]
-            priceOne = Trader.getBestPossiblePrice(self, order_depth=order_depth, isBuying=True)
-            priceTwo = Trader.getBestPossiblePrice(self, order_depth=order_depth, isBuying=False)
-            avg = 0
-            q = 0
-
-            if priceOne != -1:
-                avg += priceOne
-                q += 1
-            if priceTwo != -1:
-                avg += priceTwo
-                q += 1
 
             print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS POSITION: ", currentProductAmount)
             if product == "BANANAS":
-                if len(self.bananasSimpleMovingAverage) < self.smaSize and q == 2:
+                priceOne = Trader.getBestPossiblePrice(self, order_depth=order_depth, isBuying=True)
+                priceTwo = Trader.getBestPossiblePrice(self, order_depth=order_depth, isBuying=False)
+                avg = 0
+                q = 0
+
+                if priceOne != -1:
+                    avg += priceOne
+                    q += 1
+                if priceTwo != -1:
+                    avg += priceTwo
+                    q += 1
+
+                if len(self.bananasSimpleMovingAverage) < self.bananasSimpleMovingAverageSize and q == 2:
                     self.bananasSimpleMovingAverage.append(avg / q)                
-                elif q == 2:
+                elif self.bananasSimpleMovingAverage[-1] != 0:
+                    print("BANANAS MOVING SMA ALONG")
                     self.bananasSimpleMovingAverage.pop(0)
-                    self.bananasSimpleMovingAverage.append(avg / q)
+                    self.bananasSimpleMovingAverage.append(self.bananasSimpleMovingAverage[-1])
 
                 # if len(self.bananasSimpleMovingAverage) < self.bananasSimpleMovingAverageSize:
                 #     continue
@@ -149,7 +146,7 @@ class Trader:
                     print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
                     possiblePrices = sorted(order_depth.sell_orders.keys(), reverse=True)
 
-                    acceptable_buy_price = computedAverage - recentStandardDeviation * self.stddevThreshold
+                    acceptable_buy_price = computedAverage - recentStandardDeviation * self.bananasSTDDEVThreshold
                     for price in possiblePrices:
                         if price < acceptable_buy_price:
                             possibleQuantity: int = -1 * order_depth.sell_orders[price] # becomes some positive number
@@ -166,7 +163,7 @@ class Trader:
                 if len(order_depth.buy_orders) > 0:
                     print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS BUY ORDERS: ", state.order_depths[product].buy_orders)
                     possiblePrices = sorted(order_depth.buy_orders.keys())
-                    acceptable_sell_price = computedAverage + recentStandardDeviation * self.stddevThreshold
+                    acceptable_sell_price = computedAverage + recentStandardDeviation * self.bananasSTDDEVThreshold
                     for price in possiblePrices:
                         if price > acceptable_sell_price:
                             possibleQuantity: int = -1 * order_depth.buy_orders[price] # becomes some negative number
@@ -199,59 +196,12 @@ class Trader:
                 #             print("PRODUCT", product, "BUYING AT", midpoint - 1, "SELLING AT", midpoint + 1, "AMOUNT", amount)
 
 
-            # DON'T do the same for PEARLS
-            # if product == 'PEARLS':
-            #     if len(self.pearlsSimpleMovingAverage) < self.smaSize and q == 2:
-            #         self.pearlsSimpleMovingAverage.append(avg / q)                
-            #     elif q == 2:
-            #         self.pearlsSimpleMovingAverage.pop(0)
-            #         self.pearlsSimpleMovingAverage.append(avg / q)
-            
-            #     # if len(self.pearlsSimpleMovingAverage) < self.pearlsSimpleMovingAverageSize:
-            #     #     continue
-
-            #     computedAverage: int = sum(self.pearlsSimpleMovingAverage) / len(self.pearlsSimpleMovingAverage)
-            #     recentStandardDeviation: float = 0
-            #     for observation in self.pearlsSimpleMovingAverage:
-            #         recentStandardDeviation += (observation - computedAverage) ** 2
-
-            #     recentStandardDeviation = (recentStandardDeviation / len(self.pearlsSimpleMovingAverage)) ** 0.5
-
-            #     if len(order_depth.sell_orders) > 0:
-            #         print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
-            #         possiblePrices = sorted(order_depth.sell_orders.keys(), reverse=True)
-
-            #         acceptable_buy_price = computedAverage - recentStandardDeviation * self.stddevThreshold
-            #         for price in possiblePrices:
-            #             if price < acceptable_buy_price:
-            #                 possibleQuantity: int = -1 * order_depth.sell_orders[price] # becomes some positive number
-            #                 if possibleQuantity + currentProductAmount > self.maxPositionQuantity:
-            #                     possibleQuantity = self.maxPositionQuantity - currentProductAmount
-            #                     print("CANNOT BUY", product, str(possibleQuantity) + "x", price, "WHEN SMA IS", computedAverage, "AND STDDEV IS", recentStandardDeviation)
-            #                 if possibleQuantity > 0:
-            #                     orders.append(Order(product, price, possibleQuantity))
-            #                     currentProductAmount += possibleQuantity
-            #                     print("TRYING TO BUY", product, str(possibleQuantity) + "x", price, "WHEN SMA IS", computedAverage, "AND STDDEV IS", recentStandardDeviation)
-
-            #     if len(order_depth.buy_orders) > 0:
-            #         print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS BUY ORDERS: ", state.order_depths[product].buy_orders)
-            #         possiblePrices = sorted(order_depth.buy_orders.keys())
-            #         acceptable_sell_price = computedAverage + recentStandardDeviation * self.stddevThreshold
-            #         for price in possiblePrices:
-            #             if price > acceptable_sell_price:
-            #                 possibleQuantity: int = -1 * order_depth.buy_orders[price]
-            #                 if possibleQuantity + currentProductAmount < -1 * self.maxPositionQuantity:
-            #                     possibleQuantity = -1 * self.maxPositionQuantity - currentProductAmount
-            #                     print("CANNOT SELL", product, str(possibleQuantity) + "x", price, "WHEN SMA IS", computedAverage, "AND STDDEV IS", recentStandardDeviation)
-            #                 if possibleQuantity < 0:
-            #                     orders.append(Order(product, price, possibleQuantity))
-            #                     currentProductAmount += possibleQuantity
-            #                     print("TRYING TO SELL", product, str(possibleQuantity) + "x", price, "WHEN SMA IS", computedAverage, "AND STDDEV IS", recentStandardDeviation)
-
-
             # Check if the current product is the 'PEARLS' product, only then run the order logic
             if product == 'PEARLS':
                 
+                # Define a fair value for the PEARLS.
+                # Note that this value of 1 is just a dummy value, you should likely change it!
+                acceptable_price = 10000
 
                 # If statement checks if there are any SELL orders in the PEARLS market
                 if len(order_depth.sell_orders) > 0:
@@ -264,7 +214,7 @@ class Trader:
                     possiblePrices = sorted(order_depth.sell_orders.keys(), reverse=True)
 
                     for price in possiblePrices:
-                        if price < Trader.pearl_acceptable_price - Trader.pearlGreediness:
+                        if price < acceptable_price:
 
                             # In case the lowest ask is lower than our fair value,
                             # This presents an opportunity for us to buy cheaply
@@ -298,7 +248,7 @@ class Trader:
                     possiblePrices: list[int] = sorted(order_depth.buy_orders.keys(), reverse=False)
 
                     for price in possiblePrices:
-                        if price > Trader.pearl_acceptable_price + Trader.pearlGreediness:
+                        if price > acceptable_price:
 
                             # In case the lowest ask is lower than our fair value,
                             # This presents an opportunity for us to buy cheaply
@@ -313,9 +263,10 @@ class Trader:
                             orders.append(Order(product, price, possibleQuantity))
                             currentProductAmount += possibleQuantity # the trade will succeed, so assume it has
 
+                # Add all the above orders to the result dict
             
             
-            # Add all the above orders to the result dict            
+            
             result[product] = orders
 
         return result
@@ -332,6 +283,58 @@ class Trader:
     #     possiblePrices.remove(order)
     #     currentProductAmount += possibleQuantity
 
+    def VolumeOrder (self, product, buy : int, state : TradingState, volume : int, priceLimit = 0):
+        """Trades until it hits a certain volume traded, optional min/max trading price
+        Returns a list of orders made and a tuple of last price traded at, total volume traded, 
+        and if it filled the final order it traded at"""
+        ordersMade = []
+        orderBook = state.order_depths[product]
+        TradeFill = True
+        PriceTraded = 0
+        VolumeTraded = 0
+        if buy:
+            prices = sorted(orderBook.buy_orders.keys(), reverse=True)
+            vol = 0
+            i = 0
+            while vol < volume and i < len(prices):
+                if priceLimit and prices[i] > priceLimit: break
+                quantity = orderBook.buy_orders[prices[i]]
+                volOrdered = quantity
+                if (volOrdered + vol > volume): 
+                    volOrdered = volume - vol
+                    TradeFill = False
+                ordersMade.append(Order(product, prices[i], volOrdered))
+                VolumeTraded += volOrdered
+                PriceTraded = prices[i]
+                i += 1
+            return ordersMade, (PriceTraded, VolumeTraded, TradeFill)
+        else:
+
+
+
+
+            prices = sorted(orderBook.sell_orders.keys(), reverse=False)
+            vol = 0
+            i = 0
+            while abs(vol) < volume and i < len(prices):
+                if priceLimit and prices[i] < priceLimit: break
+                quantity = orderBook.sell_orders[prices[i]]
+                volOrdered = quantity
+                if (abs(volOrdered + vol) > volume): 
+                    volOrdered = volume + vol
+                    TradeFill = False
+                ordersMade.append(Order(product, prices[i], volOrdered))
+                VolumeTraded += volOrdered
+                PriceTraded = prices[i]
+                i += 1
+            return ordersMade, (PriceTraded, VolumeTraded, TradeFill)
+
+
+
+
+
+            pass
+    
     def LimitOrder(self, product, buy : int, state : TradingState, price = 0, volume = 0):
         """"Buy/Sell an item, set price/volume to 0 to ignore, returns _________"""
         orderBook = state.order_depths[product]
@@ -339,11 +342,14 @@ class Trader:
         if buy:
             prices = sorted(orderBook.sell_orders.keys(), reverse=True)
             vol = 0
-            # for x in prices:
-            #     if price and x > price:
-            #         break
-            #     if volume and vol < volume:
-            #       
+            for x in prices:
+                if price and x > price:
+                    break
+                if volume and vol == volume:
+                    break
+
+
+                   
 
 
             pass
