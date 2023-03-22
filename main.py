@@ -96,7 +96,7 @@ class Trader:
     """
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
         if (len(self.bananasSimpleMovingAverage) == 0):
-            print("OPERATING WITH SMASIZE ", self.smaSize, "AND STDDEVTHRESHOLD ", self.stddevThreshold, "AND PEARLGREEDINESS ", self.pearlGreediness)
+            pass #@me - uncomment #print("OPERATING WITH SMASIZE ", self.smaSize, "AND STDDEVTHRESHOLD ", self.stddevThreshold, "AND PEARLGREEDINESS ", self.pearlGreediness)
         
         # Initialize the method output dict as an empty dict
         result = {}
@@ -126,9 +126,9 @@ class Trader:
             if priceTwo != -1:
                 avg += priceTwo
                 q += 1
-
-            print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS POSITION: ", currentProductAmount)
-            if product == "BANANAS":
+            if product == "PEARLS": #@me - remove
+                print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS POSITION: ", currentProductAmount)
+            if product == "BANANAS" and False: #@me - remove false
                 if len(self.bananasSimpleMovingAverage) < self.smaSize and q == 2:
                     self.bananasSimpleMovingAverage.append(avg / q)                
                 elif q == 2:
@@ -256,7 +256,7 @@ class Trader:
 
                     print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
                     if currentProductAmount != 20:
-                        BuyOrders = self.PriceOrder(product, BUY, state, 10000, 20 - currentProductAmount)
+                        BuyOrders = self.PriceOrder(product, BUY, state, 10000, 20 - currentProductAmount, printTime=True)
                         for x in BuyOrders[0]:
                             orders.append(x)
                         currentProductAmount += BuyOrders[1][1]
@@ -269,7 +269,7 @@ class Trader:
 
                     print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS BUY ORDERS: ", state.order_depths[product].buy_orders)
                     if currentProductAmount != -20:
-                        SellOrders = self.PriceOrder(product, SELL, state, 10000, 20 - currentProductAmount)
+                        SellOrders = self.PriceOrder(product, SELL, state, 10000, -20 - currentProductAmount, printTime = True)
                         for x in SellOrders[0]:
                             orders.append(x)
                         currentProductAmount += SellOrders[1][1]
@@ -277,25 +277,32 @@ class Trader:
                     else:
                         BestBuy = sorted(order_depth.buy_orders.keys(), reverse=True) [-1]
 
+                if type(BestBuy) == type(None):
+                    BestBuy = 9995
+                if type(BestSell) == type(None):
+                    BestSell = 10005
                 print("Current Market is", BestBuy, "-", BestSell)
                 if BestBuy < 9999 or BestBuy < 10000 and currentProductAmount > 0:
-                    BestBuy += .1
+                    BestBuy += 1
                     if currentProductAmount < 15:
                         orders.append(Order(product, BestBuy, 15-currentProductAmount))
                         print("Placed Buy order of", 15-currentProductAmount, product, "for", BestBuy)
-                if BestSell > 10001 or BestBuy > 10000 and currentProductAmount < 0:
-                    BestSell -= .1
+                if BestSell > 10001 or BestSell > 10000 and currentProductAmount < 0:
+                    BestSell -= 1
                     if currentProductAmount > -15:
                         orders.append(Order(product, BestSell, -15-currentProductAmount))
                         print("Placed Sell order of", -15-currentProductAmount, product, "for", BestSell)        
             
             # Add all the above orders to the result dict            
+                print(".")
+                print(".")
+                print(".")
             result[product] = orders
 
         return result
     
 
-    def VolumeOrder (self, product, buy : int, state : TradingState, volume : int, priceLimit = 0):
+    def VolumeOrder (self, product, buy : int, state : TradingState, volume : int, priceLimit = 0, printTime = False):
         """Trades until it hits a certain volume traded, optional min/max trading price
         Returns a list of orders made and a tuple of last price traded at, total volume traded, 
         and if it filled the final order it traded at"""
@@ -312,9 +319,11 @@ class Trader:
                 if priceLimit and prices[i] > priceLimit: break
                 quantity = orderBook.sell_orders[prices[i]]
                 volOrdered = quantity
+                if printTime: print("volOrdered + VolumeTraded > volume:", volOrdered + VolumeTraded > volume)
                 if (volOrdered + VolumeTraded > volume): 
                     volOrdered = volume - VolumeTraded
                     TradeFill = False
+                    if printTime: print("volOrdered = volume - VolumeTraded:", volOrdered)
                 print("BUYING", product, str(volOrdered) + "x", prices[i])
                 ordersMade.append(Order(product, prices[i], volOrdered))
                 VolumeTraded += volOrdered
@@ -323,6 +332,8 @@ class Trader:
             if not(TradeFill): nextBest = PriceTraded
             elif i < len(prices): nextBest = prices[i]
             else: nextBest = None
+            
+
             return ordersMade, (PriceTraded, VolumeTraded, TradeFill, nextBest)
         else:
             prices = sorted(orderBook.buy_orders.keys(), reverse=True)
@@ -332,9 +343,11 @@ class Trader:
                 if priceLimit and prices[i] < priceLimit: break
                 quantity = -orderBook.buy_orders[prices[i]]
                 volOrdered = quantity
+                if printTime: print("volOrdered + VolumeTraded > volume", volOrdered + VolumeTraded > volume)
                 if (volOrdered + VolumeTraded > volume): 
                     volOrdered = volume - VolumeTraded
                     TradeFill = False
+                    if printTime: print("volOrdered = volume - VolumeTraded:", volOrdered)
                 print("SELLING", product, str(-volOrdered) + "x", prices[i])
                 ordersMade.append(Order(product, prices[i], -volOrdered))
                 VolumeTraded += volOrdered
@@ -346,7 +359,7 @@ class Trader:
             return ordersMade, (PriceTraded, -VolumeTraded, TradeFill, nextBest)
 
     
-    def PriceOrder(self, product, buy : int, state : TradingState, price : int, volumeLimit = 0):
+    def PriceOrder(self, product, buy : int, state : TradingState, price : int, volumeLimit = 0, printTime = False):
         """Trades best prices until price hit (inclusive), optional max volume traded
         Returns a list of orders made and a tuple of last price traded at, total volume traded, 
         and if it filled the final order it traded at"""
@@ -361,10 +374,20 @@ class Trader:
             for listing in prices:
                 if listing > price: break
                 volOrdered = abs(orderBook.sell_orders[listing])
+                if printTime: 
+                    ans = volumeLimit != 0
+                    if ans:
+                        ans = str(ans) + ": " + str(volumeLimit)
+                    print("volumeLimit:", ans)
                 if volumeLimit:
+                    if printTime: 
+                        print("volOrdered:", volOrdered)
+                        print("VolumeTraded + volOrdered > volumeLimit:", VolumeTraded + volOrdered > volumeLimit)
                     if VolumeTraded + volOrdered > volumeLimit:
                         volOrdered = volumeLimit - VolumeTraded
+                        if printTime: print("volOrdered = volumeLimit - VolumeTraded:", volOrdered)
                         TradeFill = False
+                        
                 print("BUYING", product, str(volOrdered) + "x", listing)
                 ordersMade.append(Order(product, listing, volOrdered))
                 VolumeTraded += volOrdered
@@ -372,15 +395,29 @@ class Trader:
             if not(TradeFill): nextBest = PriceTraded
             elif listing != PriceTraded: nextBest = listing
             else: nextBest = None
+            if printTime and VolumeTraded:
+                print("Price Traded:", PriceTraded)
+                print("Volume Traded:", VolumeTraded)
+                print("Trade Fill:", TradeFill)
+                print("Next Best:", nextBest)
             return ordersMade, (PriceTraded, VolumeTraded, TradeFill, nextBest)
         else:
             prices = sorted(orderBook.buy_orders.keys(), reverse=True)
             for listing in prices:
                 if listing < price: break
                 volOrdered = orderBook.buy_orders[listing]
+                if printTime: 
+                    ans = volumeLimit != 0
+                    if ans:
+                        ans = str(ans) + ": " + str(volumeLimit)
+                    print("volumeLimit:", ans)
                 if volumeLimit:
+                    if printTime: 
+                        print("volOrdered:", volOrdered)
+                        print("VolumeTraded + volOrdered > volumeLimit:", VolumeTraded + volOrdered > volumeLimit)
                     if VolumeTraded + volOrdered > volumeLimit:
                         volOrdered = volumeLimit - VolumeTraded
+                        if printTime: print("volOrdered = volumeLimit - VolumeTraded:", volOrdered)
                         TradeFill = False
                 print("SELLING", product, str(-volOrdered) + "x", listing)
                 ordersMade.append(Order(product, listing, -volOrdered))
@@ -389,6 +426,11 @@ class Trader:
             if not(TradeFill): nextBest = PriceTraded
             elif listing != PriceTraded: nextBest = listing
             else: nextBest = None
+            if printTime and VolumeTraded:
+                print("Price Traded:", PriceTraded)
+                print("Volume Traded:", -VolumeTraded)
+                print("Trade Fill:", TradeFill)
+                print("Next Best:", nextBest)
             return ordersMade, (PriceTraded, -VolumeTraded, TradeFill, nextBest)
 
     
