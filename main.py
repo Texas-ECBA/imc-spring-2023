@@ -86,6 +86,12 @@ class Trader:
     pearlsPriceMovingAverage: List[float] = []
     pearlsVelocityMovingAverage: List[float] = []
 
+    basePinaColadaPrice: int = 0
+    maxPinaColadaQuantity: int = 600
+
+    baseCoconutPrice: int = 0
+    maxCoconutQuantity: int = 300
+
     # CONFIGURABLE PARAMETERS
     movingAverageSize: int = 10
     longMovingAverageSize: int = 40
@@ -101,16 +107,23 @@ class Trader:
     and outputs a list of orders to be sent
     """
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
-        if (len(self.bananasPriceMovingAverage) == 0):
+        if (state.timestamp == 0):
             print("OPERATING WITH SMASIZE ", self.movingAverageSize, "LONGSMASIZE", self.longMovingAverageSize, "STDDEVTHRESHOLD", self.stddevThreshold)
             print("TIMESTAMP, PRODUCT, POSITION, BID, PRICE, ASK, PRICE_EMA, LONGPRICE_EMA, STDDEV, DAYSSINCECROSS, TRYTOBUY, CSVDATA")
+            
+        if self.getEffectivePrice(state.order_depths['PINA_COLADAS']) != -1 and self.basePinaColadaPrice == 0:
+            self.basePinaColadaPrice = self.getEffectivePrice(state.order_depths['PINA_COLADAS'])
+
+        if self.getEffectivePrice(state.order_depths['COCONUTS']) != -1 and self.baseCoconutPrice == 0:
+            self.baseCoconutPrice = self.getEffectivePrice(state.order_depths['COCONUTS'])
+
         # Initialize the method output dict as an empty dict
         result = {}
 
         # Iterate over all the keys (the available products) contained in the order depths
         for product in state.order_depths.keys():
-            currentProductAmount = 0
-            
+
+            currentProductAmount = 0            
             try:
                 currentProductAmount = state.position[product]
             except:
@@ -122,8 +135,8 @@ class Trader:
             if product == 'PEARLS':
                 result[product] = self.handlePearls(state, product, currentProductAmount)
                 
-            # if product == 'PINA_COLADAS':
-            #     result[product] = self.handleBananas(state, product, currentProductAmount)
+            if product == 'PINA_COLADAS':
+                result[product] = self.handlePinaColadas(state, product, currentProductAmount)
 
             # if product == 'COCONUTS':
             #     result[product] = self.handleBananas(state, product, currentProductAmount)
@@ -297,12 +310,36 @@ class Trader:
 
         return orders
 
-    def handlePinaColadas(self, state: TradingState, product: str, order_depth: OrderDepth) -> List[Order]:
+    def handlePinaColadas(self, state: TradingState, product: str, currentProductAmount: int) -> List[Order]:
         
+        order_depth = state.order_depths[product]
         #get effective price
-        #effectivePrice = self.getEffectivePrice(state, product)
-        return []
+        effectivePrice = self.getEffectivePrice(order_depth)
+        orders: list[Order] = []
 
+        if (effectivePrice == -1 or self.basePinaColadaPrice == 0 or self.baseCoconutPrice == 0):
+            print("NOT READY TO TRADE PINA COLADAS AT TIME", state.timestamp)
+            return orders
+        
+        normalizedPrice = effectivePrice / self.basePinaColadaPrice
+        normalizedCocunutPrice = self.getEffectivePrice(state.order_depths["COCONUTS"]) / self.baseCoconutPrice
+        
+        if normalizedPrice > normalizedCocunutPrice:
+            # sell pina coladas, matching all open buy orders greater than the effective price - 1
+            for price in sorted(order_depth.buy_orders.keys()):
+                if price >= effectivePrice - 1:
+                    desiredQuantity = -1 * order_depth.buy_orders[price]
+                    desiredQuantity = Trader.capVolume(currentProductAmount, desiredQuantity, Trader.maxPinaColadaQuantity)
+                    orders.append(Order(product, price, desiredQuantity))
+        else:
+            # buy pina coladas, matching all open sell orders less than the effective price + 1
+            for price in sorted(order_depth.sell_orders.keys(), reverse=True):
+                if price <= effectivePrice + 1:
+                    desiredQuantity = -1 * order_depth.sell_orders[price]
+                    desiredQuantity = Trader.capVolume(currentProductAmount, desiredQuantity, -1 * Trader.maxPinaColadaQuantity)
+                    orders.append(Order(product, price, desiredQuantity))
+
+        return orders
 
 
 
@@ -425,7 +462,7 @@ class Trader:
     def getEffectivePrice(self, order_depth: OrderDepth): 
         priceOne = Trader.getBestPossiblePrice(self, order_depth=order_depth, isBuying=True)
         priceTwo = Trader.getBestPossiblePrice(self, order_depth=order_depth, isBuying=False)
-        avg = 0
+        avg: float = 0.0
         q = 0
 
         if priceOne != -1:
@@ -439,6 +476,15 @@ class Trader:
             avg /= q
 
         if avg == 0:
-            return -1
+            return -1.0
         
         return avg
+
+    '''
+    Static method to cap the volume of an order to avoid exceeding the cap
+    -7, -4, -10 -> -3
+    '''
+    def capVolume(current: int, delta: int, cap: int) -> int:
+        if abs(current + delta) > abs(cap):
+            return cap - current
+        return delta
