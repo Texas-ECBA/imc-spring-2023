@@ -123,8 +123,6 @@ class Trader:
             order_depth: OrderDepth = state.order_depths[product]
             effectivePrice = Trader.getEffectivePrice(self, order_depth)
 
-            if product == "PEARLS": #@me - remove
-                print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS POSITION: ", currentProductAmount)
             if product == "BANANAS":
                 priceAverage: float = Trader.processMovingAverage(self, self.bananasPriceMovingAverage, self.movingAverageSize, effectivePrice)
                 priceLongAverage: float = Trader.processMovingAverage(self, self.bananasPriceMovingAverageLong, self.longMovingAverageSize, effectivePrice)
@@ -213,14 +211,19 @@ class Trader:
             # Check if the current product is the 'PEARLS' product, only then run the order logic
             if product == 'PEARLS':
 
+                minpos = maxpos = currentProductAmount
+                
+                print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS POSITION: ", currentProductAmount)
+
                 if len(order_depth.sell_orders) > 0:
 
                     print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
                     if currentProductAmount != 20:
-                        BuyOrders = self.PriceOrder(product, BUY, state, 10000, 20 - currentProductAmount, printTime=True)
+                        BuyOrders = self.PriceOrder(product, BUY, state, 10000, 20 - maxpos)
                         for x in BuyOrders[0]:
                             orders.append(x)
                         currentProductAmount += BuyOrders[1][1]
+                        maxpos += BuyOrders[1][1]
                         BestSell = BuyOrders[1][3]
                     else:
                         BestSell = sorted(order_depth.sell_orders.keys(), reverse=False) [-1]
@@ -230,10 +233,11 @@ class Trader:
 
                     print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS BUY ORDERS: ", state.order_depths[product].buy_orders)
                     if currentProductAmount != -20:
-                        SellOrders = self.PriceOrder(product, SELL, state, 10000, -20 - currentProductAmount, printTime = True)
+                        SellOrders = self.PriceOrder(product, SELL, state, 10000, -20 - minpos, printTime = currentProductAmount < -15)
                         for x in SellOrders[0]:
                             orders.append(x)
                         currentProductAmount += SellOrders[1][1]
+                        minpos += SellOrders[1][1]
                         BestBuy = SellOrders[1][3]
                     else:
                         BestBuy = sorted(order_depth.buy_orders.keys(), reverse=True) [-1]
@@ -242,84 +246,24 @@ class Trader:
                     BestBuy = 9995
                 if type(BestSell) == type(None):
                     BestSell = 10005
-                print("Current Market is", BestBuy, "-", BestSell)
+                print("Current Pearl Market is", BestBuy, "-", BestSell)
                 if BestBuy < 9999 or BestBuy < 10000 and currentProductAmount > 0:
                     BestBuy += 1
-                    if currentProductAmount < 15:
-                        orders.append(Order(product, BestBuy, 15-currentProductAmount))
-                        print("Placed Buy order of", 15-currentProductAmount, product, "for", BestBuy)
+                    if maxpos < 20:
+                        orders.append(Order(product, BestBuy, 20-maxpos))
+                        if True: print("Placed Buy order of", 20-maxpos, product, "for", BestBuy)
                 if BestSell > 10001 or BestSell > 10000 and currentProductAmount < 0:
                     BestSell -= 1
-                    if currentProductAmount > -15:
-                        orders.append(Order(product, BestSell, -15-currentProductAmount))
-                        print("Placed Sell order of", -15-currentProductAmount, product, "for", BestSell)        
-            
-            # Add all the above orders to the result dict            
-                print(".")
-                print(".")
-                print(".")
+                    if minpos > -20:
+                        orders.append(Order(product, BestSell, -20-minpos))
+                        if True: print("Placed Sell order of", -20-minpos, product, "for", BestSell)        
+                print("Pushed Pearl Market to", BestBuy, "-", BestSell)
+
             result[product] = orders
 
         return result
     
 
-    def VolumeOrder (self, product, buy : int, state : TradingState, volume : int, priceLimit = 0, printTime = False):
-        """Trades until it hits a certain volume traded, optional min/max trading price
-        Returns a list of orders made and a tuple of last price traded at, total volume traded, 
-        and if it filled the final order it traded at"""
-        volume = abs(volume)
-        ordersMade = []
-        orderBook = state.order_depths[product]
-        TradeFill = True
-        PriceTraded = 0
-        VolumeTraded = 0
-        if buy:
-            prices = sorted(orderBook.sell_orders.keys(), reverse=False)
-            i = 0
-            while VolumeTraded < volume and i < len(prices):
-                if priceLimit and prices[i] > priceLimit: break
-                quantity = orderBook.sell_orders[prices[i]]
-                volOrdered = quantity
-                if printTime: print("volOrdered + VolumeTraded > volume:", volOrdered + VolumeTraded > volume)
-                if (volOrdered + VolumeTraded > volume): 
-                    volOrdered = volume - VolumeTraded
-                    TradeFill = False
-                    if printTime: print("volOrdered = volume - VolumeTraded:", volOrdered)
-                print("BUYING", product, str(volOrdered) + "x", prices[i])
-                ordersMade.append(Order(product, prices[i], volOrdered))
-                VolumeTraded += volOrdered
-                PriceTraded = prices[i]
-                i += 1
-            if not(TradeFill): nextBest = PriceTraded
-            elif i < len(prices): nextBest = prices[i]
-            else: nextBest = None
-            
-
-            return ordersMade, (PriceTraded, VolumeTraded, TradeFill, nextBest)
-        else:
-            prices = sorted(orderBook.buy_orders.keys(), reverse=True)
-            VolumeTraded = 0
-            i = 0
-            while VolumeTraded < volume and i < len(prices):
-                if priceLimit and prices[i] < priceLimit: break
-                quantity = -orderBook.buy_orders[prices[i]]
-                volOrdered = quantity
-                if printTime: print("volOrdered + VolumeTraded > volume", volOrdered + VolumeTraded > volume)
-                if (volOrdered + VolumeTraded > volume): 
-                    volOrdered = volume - VolumeTraded
-                    TradeFill = False
-                    if printTime: print("volOrdered = volume - VolumeTraded:", volOrdered)
-                print("SELLING", product, str(-volOrdered) + "x", prices[i])
-                ordersMade.append(Order(product, prices[i], -volOrdered))
-                VolumeTraded += volOrdered
-                PriceTraded = prices[i]
-                i += 1
-            if not(TradeFill): nextBest = PriceTraded
-            elif i < len(prices): nextBest = prices[i]
-            else: nextBest = None
-            return ordersMade, (PriceTraded, -VolumeTraded, TradeFill, nextBest)
-
-    
     def PriceOrder(self, product, buy : int, state : TradingState, price : int, volumeLimit = 0, printTime = False):
         """Trades best prices until price hit (inclusive), optional max volume traded
         Returns a list of orders made and a tuple of last price traded at, total volume traded, 
@@ -330,6 +274,7 @@ class Trader:
         TradeFill = True
         PriceTraded = 0
         VolumeTraded = 0
+        numOrders = 0
         if buy:
             prices = sorted(orderBook.sell_orders.keys(), reverse=False)
             for listing in prices:
@@ -351,6 +296,7 @@ class Trader:
                         
                 print("BUYING", product, str(volOrdered) + "x", listing)
                 ordersMade.append(Order(product, listing, volOrdered))
+                numOrders += 1
                 VolumeTraded += volOrdered
                 PriceTraded = listing
             if not(TradeFill): nextBest = PriceTraded
@@ -382,6 +328,7 @@ class Trader:
                         TradeFill = False
                 print("SELLING", product, str(-volOrdered) + "x", listing)
                 ordersMade.append(Order(product, listing, -volOrdered))
+                numOrders += 1
                 VolumeTraded += volOrdered
                 PriceTraded = listing
             if not(TradeFill): nextBest = PriceTraded

@@ -276,7 +276,7 @@ class Trader:
                 print("Volume Traded:", VolumeTraded)
                 print("Trade Fill:", TradeFill)
                 print("Next Best:", nextBest)
-            return ordersMade, (PriceTraded, VolumeTraded, TradeFill, nextBest), numOrders
+            return ordersMade, (PriceTraded, VolumeTraded, TradeFill, nextBest)
         else:
             prices = sorted(orderBook.buy_orders.keys(), reverse=True)
             for listing in prices:
@@ -308,7 +308,7 @@ class Trader:
                 print("Volume Traded:", -VolumeTraded)
                 print("Trade Fill:", TradeFill)
                 print("Next Best:", nextBest)
-            return ordersMade, (PriceTraded, -VolumeTraded, TradeFill, nextBest), numOrders
+            return ordersMade, (PriceTraded, -VolumeTraded, TradeFill, nextBest)
 
     
     def getBestPossiblePrice(self, order_depth: OrderDepth, isBuying: bool, offset: int = 0) -> int:
