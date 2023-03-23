@@ -96,11 +96,7 @@ class Trader:
     """
     
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
-        global lastTick
-        global TotalTrades
-        if state.timestamp == 0:
-            lastTick = 0
-            TotalTrades = 0
+
         if (len(self.bananasSimpleMovingAverage) == 0):
             pass #@me - uncomment #print("OPERATING WITH SMASIZE ", self.smaSize, "AND STDDEVTHRESHOLD ", self.stddevThreshold, "AND PEARLGREEDINESS ", self.pearlGreediness)
 
@@ -128,49 +124,26 @@ class Trader:
        
             if product == 'PEARLS':
                 minpos = maxpos = currentProductAmount
-                if TotalTrades and "PEARLS" in state.own_trades.keys(): 
-                    if TotalTrades > len(state.own_trades[product]): print("********************************************************MISMATCHED TRADE********************************************************")
-                if "PEARLS" in state.own_trades.keys():
-                    count = 0
-                    for trade in state.own_trades[product]:
-                        if trade.timestamp >= lastTick:
-                            print("Own Trades:", trade)
-                            count += 1
-                    print(TotalTrades, "hard trades,", count, "trades actually made")
-                    if count > TotalTrades: print("Bonus Order!!")
-                TotalTrades = 0
- 
-                try: 
-                    for trade in state.market_trades[product]:
-                        if trade.timestamp == lastTick or trade.timestamp == state.timestamp:
-                            print("Market Trades:", trade)
-                except: pass
-
-                if True: print(".")
-                if True: print(".")
-                if True: print(".")
+                
                 print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS POSITION: ", currentProductAmount)
-
-                printout = abs(currentProductAmount) > 15
 
                 if len(order_depth.sell_orders) > 0:
 
-                    if printout: print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
+                    print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
                     if currentProductAmount != 20:
-                        BuyOrders = self.PriceOrder(product, BUY, state, 10000, 20 - maxpos, printTime=currentProductAmount > 15)
+                        BuyOrders = self.PriceOrder(product, BUY, state, 10000, 20 - maxpos)
                         for x in BuyOrders[0]:
                             orders.append(x)
                         currentProductAmount += BuyOrders[1][1]
                         maxpos += BuyOrders[1][1]
                         BestSell = BuyOrders[1][3]
-                        TotalTrades += BuyOrders[2]
                     else:
                         BestSell = sorted(order_depth.sell_orders.keys(), reverse=False) [-1]
 
 
                 if len(order_depth.buy_orders) != 0:
 
-                    if printout: print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS BUY ORDERS: ", state.order_depths[product].buy_orders)
+                    print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS BUY ORDERS: ", state.order_depths[product].buy_orders)
                     if currentProductAmount != -20:
                         SellOrders = self.PriceOrder(product, SELL, state, 10000, -20 - minpos, printTime = currentProductAmount < -15)
                         for x in SellOrders[0]:
@@ -178,7 +151,6 @@ class Trader:
                         currentProductAmount += SellOrders[1][1]
                         minpos += SellOrders[1][1]
                         BestBuy = SellOrders[1][3]
-                        TotalTrades += SellOrders[2]
                     else:
                         BestBuy = sorted(order_depth.buy_orders.keys(), reverse=True) [-1]
 
@@ -186,26 +158,20 @@ class Trader:
                     BestBuy = 9995
                 if type(BestSell) == type(None):
                     BestSell = 10005
-                if printout: print("Current Market is", BestBuy, "-", BestSell)
-                old = (str(BestBuy), str(BestSell))
+                print("Current Pearl Market is", BestBuy, "-", BestSell)
                 if BestBuy < 9999 or BestBuy < 10000 and currentProductAmount > 0:
                     BestBuy += 1
-                    if maxpos < 18:
+                    if maxpos < 20:
                         orders.append(Order(product, BestBuy, 20-maxpos))
                         if True: print("Placed Buy order of", 20-maxpos, product, "for", BestBuy)
                 if BestSell > 10001 or BestSell > 10000 and currentProductAmount < 0:
                     BestSell -= 1
-                    if minpos > -18:
+                    if minpos > -20:
                         orders.append(Order(product, BestSell, -20-minpos))
                         if True: print("Placed Sell order of", -20-minpos, product, "for", BestSell)        
-                # print("Pushed market to", BestBuy, "-", BestSell, "from", old[0], "-", old[1])
-            # Add all the above orders to the result dict            
-                # if True: print(".")
-                # if True: print(".")
-                # if True: print(".")
+                print("Pushed Pearl Market to", BestBuy, "-", BestSell)
 
             result[product] = orders
-        lastTick = state.timestamp
 
         return result
     
