@@ -92,6 +92,9 @@ class Trader:
     baseCoconutPrice: int = 0
     maxCoconutQuantity: int = 300
 
+
+    done_initializing: bool = False # we use this to detect state resets
+
     # CONFIGURABLE PARAMETERS
     movingAverageSize: int = 10
     longMovingAverageSize: int = 40
@@ -107,15 +110,19 @@ class Trader:
     and outputs a list of orders to be sent
     """
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
-        if (state.timestamp == 0):
+        if not self.done_initializing:
             print("OPERATING WITH SMASIZE ", self.movingAverageSize, "LONGSMASIZE", self.longMovingAverageSize, "STDDEVTHRESHOLD", self.stddevThreshold)
             print("TIMESTAMP, PRODUCT, POSITION, BID, PRICE, ASK, PRICE_EMA, LONGPRICE_EMA, STDDEV, DAYSSINCECROSS, TRYTOBUY, CSVDATA")
-            
+            self.done_initializing = True
+
         if self.getEffectivePrice(state.order_depths['PINA_COLADAS']) != -1 and self.basePinaColadaPrice == 0:
             self.basePinaColadaPrice = self.getEffectivePrice(state.order_depths['PINA_COLADAS'])
 
         if self.getEffectivePrice(state.order_depths['COCONUTS']) != -1 and self.baseCoconutPrice == 0:
             self.baseCoconutPrice = self.getEffectivePrice(state.order_depths['COCONUTS'])
+
+        if not self.done_initializing and state.timestamp > 0:
+            print("STATE MAY HAVE BEEN RESET")
 
         # Initialize the method output dict as an empty dict
         result = {}
@@ -238,6 +245,7 @@ class Trader:
         priceLongAverage: float = Trader.processMovingAverage(self, self.bananasPriceMovingAverageLong, self.longMovingAverageSize, effectivePrice, isSimple = True)
         
         if (priceAverage == -1 or priceLongAverage == -1 or len(self.bananasPriceMovingAverageLong) < self.longMovingAverageSize):
+            print("Not enough data to calculate moving average for bananas, skipping")
             return orders    
     
         isShortAboveLong = priceAverage > priceLongAverage
@@ -256,17 +264,13 @@ class Trader:
         self.shortTermAboveLongTerm = isShortAboveLong
         self.daysSinceCross += 1
 
-        bid = Trader.getBestPossiblePrice(self, order_depth=order_depth, isBuying=True)
-        ask = Trader.getBestPossiblePrice(self, order_depth=order_depth, isBuying=False)
-
-
         recentStandardDeviation: float = 0
         for observation in self.bananasPriceMovingAverage:
             recentStandardDeviation += (observation - priceAverage) ** 2
 
         recentStandardDeviation = (recentStandardDeviation / len(self.bananasPriceMovingAverage)) ** 0.5
 
-        print(state.timestamp, '"' + product + '"', currentProductAmount, bid, effectivePrice, ask, priceAverage, priceLongAverage, recentStandardDeviation, self.daysSinceCross, self.tryToBuy, '"CSVDATA"', sep=",")
+        self.writeLog(state, product, priceAverage, priceLongAverage, recentStandardDeviation, self.daysSinceCross, self.tryToBuy)
 
         if len(order_depth.sell_orders) > 0: # we are going to consider buying
             print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
@@ -324,17 +328,19 @@ class Trader:
         normalizedPrice = effectivePrice / self.basePinaColadaPrice
         normalizedCocunutPrice = self.getEffectivePrice(state.order_depths["COCONUTS"]) / self.baseCoconutPrice
         
+        self.writeLog(state, product, normalizedPrice, normalizedCocunutPrice)
+
         if normalizedPrice > normalizedCocunutPrice:
             # sell pina coladas, matching all open buy orders greater than the effective price - 1
             for price in sorted(order_depth.buy_orders.keys()):
-                if price >= effectivePrice - 1:
+                if price >= effectivePrice - 2:
                     desiredQuantity = -1 * order_depth.buy_orders[price]
                     desiredQuantity = Trader.capVolume(currentProductAmount, desiredQuantity, Trader.maxPinaColadaQuantity)
                     orders.append(Order(product, price, desiredQuantity))
         else:
             # buy pina coladas, matching all open sell orders less than the effective price + 1
             for price in sorted(order_depth.sell_orders.keys(), reverse=True):
-                if price <= effectivePrice + 1:
+                if price <= effectivePrice + 2:
                     desiredQuantity = -1 * order_depth.sell_orders[price]
                     desiredQuantity = Trader.capVolume(currentProductAmount, desiredQuantity, -1 * Trader.maxPinaColadaQuantity)
                     orders.append(Order(product, price, desiredQuantity))
@@ -488,3 +494,10 @@ class Trader:
         if abs(current + delta) > abs(cap):
             return cap - current
         return delta
+    
+    def writeLog(self, state: TradingState, product: str, c1 = 0, c2 = 0, c3 = 0, c4 = 0, c5 = 0):
+        currentProductAmount = state.position.get(product, 0)
+        bid = Trader.getBestPossiblePrice(self, state.order_depths[product], True)
+        effectivePrice = Trader.getEffectivePrice(self, state.order_depths[product])
+        ask = Trader.getBestPossiblePrice(self, state.order_depths[product], False)
+        print(state.timestamp, '"' + product + '"', currentProductAmount, bid, effectivePrice, ask, c1,c2,c3,c4,c5, '"CSVDATA"', sep=",")
