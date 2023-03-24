@@ -87,10 +87,11 @@ class Trader:
     pearlsVelocityMovingAverage: List[float] = []
 
     basePinaColadaPrice: int = 0
-    maxPinaColadaQuantity: int = 600
+    maxPinaColadaQuantity: int = 300
+    minPinaColadaRatioDifference: float = 0.000025
 
     baseCoconutPrice: int = 0
-    maxCoconutQuantity: int = 300
+    maxCoconutQuantity: int = 600
 
 
     done_initializing: bool = False # we use this to detect state resets
@@ -326,18 +327,21 @@ class Trader:
             return orders
         
         normalizedPrice = effectivePrice / self.basePinaColadaPrice
-        normalizedCocunutPrice = self.getEffectivePrice(state.order_depths["COCONUTS"]) / self.baseCoconutPrice
+        normalizedCoconutPrice = self.getEffectivePrice(state.order_depths["COCONUTS"]) / self.baseCoconutPrice
         
-        self.writeLog(state, product, normalizedPrice, normalizedCocunutPrice)
+        ratio = normalizedPrice / normalizedCoconutPrice
 
-        if normalizedPrice > normalizedCocunutPrice:
+        self.writeLog(state, product, normalizedPrice, normalizedCoconutPrice, ratio, 1 + self.minPinaColadaRatioDifference, 1 - self.minPinaColadaRatioDifference)
+
+        if ratio > 1 + self.minPinaColadaRatioDifference:
             # sell pina coladas, matching all open buy orders greater than the effective price - 1
             for price in sorted(order_depth.buy_orders.keys()):
                 if price >= effectivePrice - 2:
                     desiredQuantity = -1 * order_depth.buy_orders[price]
                     desiredQuantity = Trader.capVolume(currentProductAmount, desiredQuantity, Trader.maxPinaColadaQuantity)
                     orders.append(Order(product, price, desiredQuantity))
-        else:
+        
+        if ratio < 1 - self.minPinaColadaRatioDifference:
             # buy pina coladas, matching all open sell orders less than the effective price + 1
             for price in sorted(order_depth.sell_orders.keys(), reverse=True):
                 if price <= effectivePrice + 2:
