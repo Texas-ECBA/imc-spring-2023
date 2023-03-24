@@ -104,21 +104,42 @@ class Trader:
         "COCONUTS": []
     }
 
-    shortVelocities: Dict[Product, float] = {
+    shortVelocities: Dict[Product, List[float]] = {
+        "BANANAS": [],
+        "PEARLS": [],
+        "PINA_COLADAS": [],
+        "COCONUTS": []
+    }
+
+    longVelocities: Dict[Product, List[float]] = {
+        "BANANAS": [],
+        "PEARLS": [],
+        "PINA_COLADAS": [],
+        "COCONUTS": []
+    }
+
+    ultraLongVelocities: Dict[Product, List[float]] = {
+        "BANANAS": [],
+        "PEARLS": [],
+        "PINA_COLADAS": [],
+        "COCONUTS": []
+    }
+
+    shortAccelerations: Dict[Product, float] = {
         "BANANAS": 0.0,
         "PEARLS": 0.0,
         "PINA_COLADAS": 0.0,
         "COCONUTS": 0.0
     }
 
-    longVelocities: Dict[Product, float] = {
+    longAccelerations: Dict[Product, float] = {
         "BANANAS": 0.0,
         "PEARLS": 0.0,
         "PINA_COLADAS": 0.0,
         "COCONUTS": 0.0
     }
 
-    ultraLongVelocities: Dict[Product, float] = {
+    ultraLongAccelerations: Dict[Product, float] = {
         "BANANAS": 0.0,
         "PEARLS": 0.0,
         "PINA_COLADAS": 0.0,
@@ -157,6 +178,8 @@ class Trader:
     """
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
         if not self.done_initializing:
+            if state.timestamp > 0:
+                print("STATE MAY HAVE BEEN RESET")
             print("OPERATING WITH SMASIZE ", self.shortMovingAverageSize, "LONGSMASIZE", self.longMovingAverageSize, "STDDEVTHRESHOLD", self.stddevThreshold)
             print("TIMESTAMP, PRODUCT, POSITION, BID, PRICE, ASK, PRICE_EMA, LONGPRICE_EMA, STDDEV, DAYSSINCECROSS, TRYTOBUY, CSVDATA")
             self.done_initializing = True
@@ -167,8 +190,7 @@ class Trader:
         if self.getEffectivePrice(state.order_depths['COCONUTS']) != -1 and self.baseCoconutPrice == 0:
             self.baseCoconutPrice = self.getEffectivePrice(state.order_depths['COCONUTS'])
 
-        if not self.done_initializing and state.timestamp > 0:
-            print("STATE MAY HAVE BEEN RESET")
+        
 
         # Initialize the method output dict as an empty dict
         result = {}
@@ -260,10 +282,7 @@ class Trader:
     
     def handleBananas(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
         orders: list[Order] = []
-        order_depth = state.order_depths[product]
-        effectivePrice = Trader.getEffectivePrice(self, order_depth)
-        immediateVelocity: float = self.shortVelocities[product]
-        longerVelocity: float = self.longVelocities[product]
+        order_depth = state.order_depths[product]        
         priceAverage: float = Trader.computeSimpleAverage(self, self.shortMovingAverages[product])
         priceLongAverage: float = Trader.computeSimpleAverage(self, self.longMovingAverages[product])
         
@@ -293,7 +312,7 @@ class Trader:
 
         recentStandardDeviation = (recentStandardDeviation / len(self.shortMovingAverages[product])) ** 0.5
 
-        self.writeLog(state, product, priceAverage, priceLongAverage, recentStandardDeviation, immediateVelocity, longerVelocity)
+        self.writeLog(state, product, priceAverage, priceLongAverage, recentStandardDeviation)
 
         if len(order_depth.sell_orders) > 0: # we are going to consider buying
             print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
@@ -325,9 +344,15 @@ class Trader:
         ratio = normalizedPrice / normalizedCoconutPrice
 
         # this helps us avoid selling on long-term upswings and buying on long-term downswings until they turn around
-        base = Trader.clamp(1 + self.ultraLongVelocities["COCONUTS"] / 2500, 0.9, 1.1)
+        versusVel = 0
+        if len(self.ultraLongVelocities["COCONUTS"]) > 0:
+            versusVel = self.ultraLongVelocities["COCONUTS"][-1]
+        
+        base = Trader.clamp(1 + versusVel / 100, 0.99, 1.01)
 
-        self.writeLog(state, product, normalizedPrice, normalizedCoconutPrice, ratio, base + self.minPinaColadaRatioDifference, base - self.minPinaColadaRatioDifference)
+        desperation = min(2, abs(base - ratio) * 100)
+
+        self.writeLog(state, product, normalizedPrice, normalizedCoconutPrice, ratio, base + self.minPinaColadaRatioDifference, base - self.minPinaColadaRatioDifference, desperation)
 
         if abs(ratio - base) < self.minPinaColadaRatioDifference:
             print("Ratio is: ", ratio, " which is within the threshold of ", self.minPinaColadaRatioDifference, " at time ", state.timestamp, " so not trading")
@@ -335,36 +360,47 @@ class Trader:
 
         if ratio > base + self.minPinaColadaRatioDifference:
             # sell pina coladas, matching all open buy orders greater than the effective price - 1
-            orders = orders + self.getAllOrdersBetterThan(product, state, False, effectivePrice - 1 - 0*abs(1 - ratio), currentProductAmount)
+            orders = orders + self.getAllOrdersBetterThan(product, state, False, effectivePrice - 1 - desperation, currentProductAmount)
         if ratio < base - self.minPinaColadaRatioDifference:
             # buy pina coladas, matching all open sell orders less than the effective price + 1
             # ratio under 1, so multiply price by (2-ratio) to increase price as ratio decreases
-            orders = orders + self.getAllOrdersBetterThan(product, state, True, effectivePrice + 1 + 0*abs(1 - ratio), currentProductAmount)
+            orders = orders + self.getAllOrdersBetterThan(product, state, True, effectivePrice + 1 + desperation, currentProductAmount)
         
         return orders
 
     def handleCoconuts(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
-
+        return []
         if len(self.shortMovingAverages[product]) < self.shortMovingAverageSize:
             return []
         
         order_depth = state.order_depths[product]
-        shortMovingAverage = self.shortMovingAverages[product][-1]
-        longMovingAverage = self.longMovingAverages[product][-1]
-        velocity = self.shortVelocities[product]
-        ultraLongVelocity = self.ultraLongVelocities[product]
+        velocity = self.longVelocities[product][-1]
         effectivePrice = self.getEffectivePrice(order_depth)
         orders: list[Order] = []
 
-        self.writeLog(state, product, shortMovingAverage, longMovingAverage, velocity, ultraLongVelocity)
+        priceAverage: float = Trader.computeSimpleAverage(self, self.shortMovingAverages[product])
+        priceLongAverage: float = Trader.computeSimpleAverage(self, self.longMovingAverages[product])
+        
+        
+        recentStandardDeviation: float = 0
+        for observation in self.shortMovingAverages[product]:
+            recentStandardDeviation += (observation - priceAverage) ** 2
 
-        if (velocity < -100):
-            # now on a downward trend, so sell all coconuts
-            orders = orders + self.getAllOrdersBetterThan(product, state, False, effectivePrice, currentProductAmount)
-        elif (velocity > 100):
-            # now on an upward trend, so buy all coconuts
-            orders = orders + self.getAllOrdersBetterThan(product, state, True, effectivePrice, currentProductAmount)
+        recentStandardDeviation = (recentStandardDeviation / len(self.shortMovingAverages[product])) ** 0.5
 
+        self.writeLog(state, product, priceAverage, priceLongAverage, recentStandardDeviation)
+
+        if len(order_depth.sell_orders) > 0: # we are going to consider buying
+            print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
+            acceptable_buy_price = priceAverage - recentStandardDeviation * self.stddevThreshold
+
+            orders = orders + self.getAllOrdersBetterThan(product, state, True, acceptable_buy_price, currentProductAmount)
+
+        if len(order_depth.buy_orders) > 0: # we are going to consider selling
+            print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS BUY ORDERS: ", state.order_depths[product].buy_orders)
+            acceptable_sell_price = priceAverage + recentStandardDeviation * self.stddevThreshold
+
+            orders = orders + self.getAllOrdersBetterThan(product, state, False, acceptable_sell_price, currentProductAmount)
         return orders
 
     def PriceOrder(self, product, buy : int, state : TradingState, price : int, volumeLimit = 0, printTime = False):
@@ -482,16 +518,21 @@ class Trader:
 
         return possiblePrices[offset]
 
-    def processMovingAverage(self, product: str, movingAverageLength: int, nextValue: float, isSimple: bool = False) -> float:
+    def processMovingAverage(self, product: str, movingAverageLength: int, nextValue: float, isSimple: bool = False):
         
-        if movingAverageLength == self.longMovingAverageSize:
-            movingAverage = self.longMovingAverages[product]
-        elif movingAverageLength == self.shortMovingAverageSize:
+        if movingAverageLength == self.shortMovingAverageSize:
             movingAverage = self.shortMovingAverages[product]
+            movingVelocity = self.shortVelocities[product]
+        elif movingAverageLength == self.longMovingAverageSize:
+            movingAverage = self.longMovingAverages[product]
+            movingVelocity = self.longVelocities[product]
         else:
             movingAverage = self.ultraLongMovingAverages[product]
+            movingVelocity = self.ultraLongVelocities[product]
 
-        if len(movingAverage) < movingAverageLength or isSimple:  # append the simple moving average
+
+
+        if len(movingAverage) < 5 or isSimple:  # append the simple moving average
             movingAverage.append(nextValue)
         else: # append the exponential moving average
             movingAverage.append(
@@ -501,12 +542,29 @@ class Trader:
         if len(movingAverage) > movingAverageLength:
             movingAverage.pop(0)
 
-        if movingAverageLength == self.longMovingAverageSize:
-            self.longVelocities[product] = movingAverage[-1] - movingAverage[0]
-        elif movingAverageLength == self.shortMovingAverageSize:
-            self.shortVelocities[product] = movingAverage[-1] - movingAverage[0]
+        if len(movingAverage) > 1:
+            nextVelocity = movingAverage[-1] - movingAverage[-2]
+            if len(movingVelocity) < 5 or isSimple:
+                movingVelocity.append(nextVelocity)
+            else:
+                movingVelocity.append(
+                    nextVelocity * (self.exponentialSmoothing / (1 + movingAverageLength)) +
+                    movingVelocity[-1] * (1 - (self.exponentialSmoothing / (1 + movingAverageLength))))
+                
+            if len(movingVelocity) > movingAverageLength:
+                movingVelocity.pop(0)
+
+        if len(movingVelocity) < movingAverageLength:
+            return
+
+        if movingAverageLength == self.shortMovingAverageSize:
+            self.shortAccelerations[product] = (movingVelocity[-1] - movingVelocity[0]) / len(movingVelocity)
+        elif movingAverageLength == self.longMovingAverageSize:
+            self.longAccelerations[product] = (movingVelocity[-1] - movingVelocity[-2])
         else:
-            self.ultraLongVelocities[product] = movingAverage[-1] - movingAverage[0]
+            self.ultraLongAccelerations[product] = (movingVelocity[-1] - movingVelocity[-2])
+
+        
 
     def computeSimpleAverage(self, list: List) -> float:
         if len(list) == 0:
@@ -538,12 +596,28 @@ class Trader:
         return avg
 
 
-    def writeLog(self, state: TradingState, product: str, c1 = 0, c2 = 0, c3 = 0, c4 = 0, c5 = 0):
+    def writeLog(self, state: TradingState, product: str, c1 = 0, c2 = 0, c3 = 0, c4 = 0, c5 = 0, c6 = 0):
         currentProductAmount = state.position.get(product, 0)
         bid = Trader.getBestPossiblePrice(self, state.order_depths[product], True)
         effectivePrice = Trader.getEffectivePrice(self, state.order_depths[product])
         ask = Trader.getBestPossiblePrice(self, state.order_depths[product], False)
-        print(state.timestamp, '"' + product + '"', currentProductAmount, bid, effectivePrice, ask, c1,c2,c3,c4,c5, '"CSVDATA"', sep=",")
+
+        shortMa = self.computeSimpleAverage(self.shortMovingAverages[product])
+        longMa = self.longMovingAverages[product][-1]
+        ultraLongMa = self.ultraLongMovingAverages[product][-1]
+
+        shortVel = self.shortVelocities[product][-1]
+        longVel = self.longVelocities[product][-1]
+        ultraLongVel = self.ultraLongVelocities[product][-1]
+
+        shortAcc = self.shortAccelerations[product]
+        longAcc = self.longAccelerations[product]
+        ultraLongAcc = self.ultraLongAccelerations[product]
+
+        print(state.timestamp, '"' + product + '"', currentProductAmount, bid, effectivePrice, ask, 
+              shortMa, longMa, ultraLongMa, shortVel, longVel, ultraLongVel, shortAcc, longAcc, ultraLongAcc,
+              
+              c1,c2,c3,c4,c5,c6, '"CSVDATA"', sep=",")
 
 ######### UTILITY FUNCTIONS #########
 
