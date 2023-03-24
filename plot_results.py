@@ -2,9 +2,10 @@
 import matplotlib.pyplot as plt
 
 # CONFIGURABLES
-filename = "to_plot_4.log"
+filename = "l5.log"
 plot_bid_and_ask = False
 plot_price = False
+plot_products = ["PINA_COLADAS", "COCONUTS"]
 # END CONFIGURABLES
 
 
@@ -18,10 +19,10 @@ customs: dict[str, list[list[float]]] = {}
 products = ["PEARLS", "BANANAS", "PINA_COLADAS", "COCONUTS"]
 
 productToCustomSeries = {
-    "PEARLS": ["CUSTOM1", "CUSTOM2"],
+    "PEARLS": [],
     "BANANAS": ["Short MA", "Long MA"],
-    "PINA_COLADAS": ["PC Price", "Coconut Price", "Ratio"],
-    "COCONUTS": ["CUSTOM1", "CUSTOM2"]
+    "PINA_COLADAS": ["PC PriceNorm", "Coconut PriceNorm", "Ratio", "+t", "-t"],
+    "COCONUTS": ["Short MA", "Long MA", "Short Vel", "ULong Vel", "Zero"]
 }
 
 custom_colors = ["red", "green", "blue", "orange", "purple", "yellow", "black", "pink", "brown", "gray", "olive", "cyan"]
@@ -43,6 +44,8 @@ with open(filename, "r") as f:
         line = line.strip()
         line = line.split(",")
         product = line[1].removeprefix('"').removesuffix('"')
+        if product not in plot_products:
+            continue
         timestamps[product].append(int(line[0].split(" ")[0]))
         positions[product].append(float(line[2]))
         prices[product].append(float(line[4]))
@@ -70,24 +73,32 @@ for kv in enumerate(products):
     
     if plot_price:
         axs[i].plot(timestamps[product], prices[product], label="Price")
+    
 
     if plot_bid_and_ask:
         axs[i].plot(timestamps[product], bids[product], label="Bid")
         axs[i].plot(timestamps[product], asks[product], label="Ask")
     
-    axs[i].plot(timestamps[product], positions[product], label="Position", color="black")
 
-    lines, labels = axs[i].get_legend_handles_labels()
 
     # plot custom series on secondary y axis, and also make sure they are labeled
     secondary_ax = axs[i].twinx()
     seriesLabels = productToCustomSeries[product]
     for j in range(len(seriesLabels)):
         seriesLabel = seriesLabels[j]
-        secondary_ax.plot(timestamps[product], customs[product][j], label=seriesLabel, color=custom_colors[j])
+        if "MA" in seriesLabel:
+            # plot in the main axis as a dashed line
+            axs[i].plot(timestamps[product], customs[product][j], label=seriesLabel, color=custom_colors[j], linestyle="--")
+        else:
+            secondary_ax.plot(timestamps[product], customs[product][j], label=seriesLabel, color=custom_colors[j]) 
+
+    tertiary_ax = axs[i].twinx()
+    tertiary_ax.plot(timestamps[product], positions[product], label="Position", color="black")
+    tertiary_ax.spines['right'].set_position(('outward', 60))
 
     axs[i].set_title(product)
     axs[i].legend()
+    secondary_ax.legend()
     # make sure x axis is labeled every 10% of the data
     axs[i].set_xticks(timestamps[product][::len(timestamps[product])//10])
     # make sure all y axis labels are labeled every 20% of the data

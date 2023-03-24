@@ -76,29 +76,74 @@ class ProsperityEncoder(JSONEncoder):
 
 class Trader:
     maxPositionQuantity: int = 20
+    maxQuantities: Dict[Product, int] = {
+        "BANANAS": 20,
+        "PEARLS": 20,
+        "PINA_COLADAS": 300,
+        "COCONUTS": 600
+    }
     
-    bananasPriceMovingAverage: List[float] = []
-    bananasPriceMovingAverageLong: List[float] = []
+    shortMovingAverages: Dict[Product, List[float]] = {
+        "BANANAS": [],
+        "PEARLS": [],
+        "PINA_COLADAS": [],
+        "COCONUTS": []
+    }
+
+    longMovingAverages: Dict[Product, List[float]] = {
+        "BANANAS": [],
+        "PEARLS": [],
+        "PINA_COLADAS": [],
+        "COCONUTS": []
+    }
+
+    ultraLongMovingAverages: Dict[Product, List[float]] = {
+        "BANANAS": [],
+        "PEARLS": [],
+        "PINA_COLADAS": [],
+        "COCONUTS": []
+    }
+
+    shortVelocities: Dict[Product, float] = {
+        "BANANAS": 0.0,
+        "PEARLS": 0.0,
+        "PINA_COLADAS": 0.0,
+        "COCONUTS": 0.0
+    }
+
+    longVelocities: Dict[Product, float] = {
+        "BANANAS": 0.0,
+        "PEARLS": 0.0,
+        "PINA_COLADAS": 0.0,
+        "COCONUTS": 0.0
+    }
+
+    ultraLongVelocities: Dict[Product, float] = {
+        "BANANAS": 0.0,
+        "PEARLS": 0.0,
+        "PINA_COLADAS": 0.0,
+        "COCONUTS": 0.0
+    }
+    
+
     shortTermAboveLongTerm: bool = False
     tryToBuy: bool = True
     daysSinceCross: int = 0
 
-    pearlsPriceMovingAverage: List[float] = []
-    pearlsVelocityMovingAverage: List[float] = []
-
     basePinaColadaPrice: int = 0
-    maxPinaColadaQuantity: int = 300
-    minPinaColadaRatioDifference: float = 0.000025
+    minPinaColadaRatioDifference: float = 0.00030
+    pinaColadaRatioWeight: float = 0.05
 
     baseCoconutPrice: int = 0
-    maxCoconutQuantity: int = 600
-
+    coconutsPriceMovingAverage: List[float] = []
+    coconutsPriceMovingAverageLong: List[float] = []
 
     done_initializing: bool = False # we use this to detect state resets
 
     # CONFIGURABLE PARAMETERS
-    movingAverageSize: int = 10
+    shortMovingAverageSize: int = 10
     longMovingAverageSize: int = 40
+    ultraLongMovingAverageSize: int = 200
     stddevThreshold: float = 0.5
     exponentialSmoothing: float = 2.0
     # Define a fair value for the PEARLS.
@@ -112,7 +157,7 @@ class Trader:
     """
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
         if not self.done_initializing:
-            print("OPERATING WITH SMASIZE ", self.movingAverageSize, "LONGSMASIZE", self.longMovingAverageSize, "STDDEVTHRESHOLD", self.stddevThreshold)
+            print("OPERATING WITH SMASIZE ", self.shortMovingAverageSize, "LONGSMASIZE", self.longMovingAverageSize, "STDDEVTHRESHOLD", self.stddevThreshold)
             print("TIMESTAMP, PRODUCT, POSITION, BID, PRICE, ASK, PRICE_EMA, LONGPRICE_EMA, STDDEV, DAYSSINCECROSS, TRYTOBUY, CSVDATA")
             self.done_initializing = True
 
@@ -128,7 +173,13 @@ class Trader:
         # Initialize the method output dict as an empty dict
         result = {}
 
-        # Iterate over all the keys (the available products) contained in the order depths
+        # Process the moving averages first
+        for product in state.order_depths.keys():
+            effectivePrice = self.getEffectivePrice(state.order_depths[product])
+            self.processMovingAverage(product, self.shortMovingAverageSize, effectivePrice, True)
+            self.processMovingAverage(product, self.longMovingAverageSize, effectivePrice, False)
+            self.processMovingAverage(product, self.ultraLongMovingAverageSize, effectivePrice, False)
+        # Handle buying and selling of each product
         for product in state.order_depths.keys():
 
             currentProductAmount = 0            
@@ -136,7 +187,7 @@ class Trader:
                 currentProductAmount = state.position[product]
             except:
                 pass
-
+            
             if product == "BANANAS":
                 result[product] = self.handleBananas(state, product, currentProductAmount)
                 
@@ -146,8 +197,9 @@ class Trader:
             if product == 'PINA_COLADAS':
                 result[product] = self.handlePinaColadas(state, product, currentProductAmount)
 
-            # if product == 'COCONUTS':
-            #     result[product] = self.handleBananas(state, product, currentProductAmount)
+            if product == 'COCONUTS':
+                result[product] = self.handleCoconuts(state, product, currentProductAmount)
+                pass
 
         return result
     
@@ -191,7 +243,7 @@ class Trader:
             BestBuy = 9995
         if type(BestSell) == type(None):
             BestSell = 10005
-        print("Current Pearl Market is", BestBuy, "-", BestSell)
+        # print("Current Pearl Market is", BestBuy, "-", BestSell)
         if BestBuy < 9999 or BestBuy < 10000 and currentProductAmount > 0:
             BestBuy += 1
             if maxpos < 20:
@@ -202,50 +254,20 @@ class Trader:
             if minpos > -20:
                 orders.append(Order(product, BestSell, -20-minpos))
                 if True: print("Placed Sell order of", -20-minpos, product, "for", BestSell)        
-        print("Pushed Pearl Market to", BestBuy, "-", BestSell)
+        # print("Pushed Pearl Market to", BestBuy, "-", BestSell)
         return orders
-
-
-    # def handleBananas(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
-    #     minpos = maxpos = currentProductAmount
-    #     try: market = state.market_trades[product]
-    #     except: market = []
-    #     prevprices = []
-    #     for trade in market:
-    #         prevprices.append(trade.price)
-    #     prevprices = sorted(prevprices)
-
-    #     print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS POSITION: ", currentProductAmount)
-    #     orders: list[Order] = []
-    #     order_depth = state.order_depths[product]
-    #     BestSell = self.PriceOrder(product, BUY, state, 0)[1][3]
-    #     BestBuy = self.PriceOrder(product, SELL, state, 0)[1][3]
-
-    #     if type(BestBuy) == type(None):
-    #         BestBuy = prevprices[0]
-    #     if type(BestSell) == type(None):
-    #         BestSell = prevprices[-1]
-    #     print("Current Banana Market is", BestBuy, "-", BestSell)
-    #     BestBuy += .1
-    #     if maxpos < 20:
-    #         orders.append(Order(product, BestBuy, 20-maxpos))
-    #         print("Placed Buy order of", 20-maxpos, product, "for", BestBuy)
-    #     BestSell -= 1
-    #     if minpos > -20:
-    #         orders.append(Order(product, BestSell, -20-minpos))
-    #         print("Placed Sell order of", -20-minpos, product, "for", BestSell)        
-    #     print("Pushed Banana Market to", BestBuy, "-", BestSell)
-    #     return orders    
     
     
     def handleBananas(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
         orders: list[Order] = []
         order_depth = state.order_depths[product]
         effectivePrice = Trader.getEffectivePrice(self, order_depth)
-        priceAverage: float = Trader.processMovingAverage(self, self.bananasPriceMovingAverage, self.movingAverageSize, effectivePrice, isSimple = True)
-        priceLongAverage: float = Trader.processMovingAverage(self, self.bananasPriceMovingAverageLong, self.longMovingAverageSize, effectivePrice, isSimple = True)
+        immediateVelocity: float = self.shortVelocities[product]
+        longerVelocity: float = self.longVelocities[product]
+        priceAverage: float = Trader.computeSimpleAverage(self, self.shortMovingAverages[product])
+        priceLongAverage: float = Trader.computeSimpleAverage(self, self.longMovingAverages[product])
         
-        if (priceAverage == -1 or priceLongAverage == -1 or len(self.bananasPriceMovingAverageLong) < self.longMovingAverageSize):
+        if (priceAverage == -1 or priceLongAverage == -1 or len(self.longMovingAverages[product]) < self.longMovingAverageSize):
             print("Not enough data to calculate moving average for bananas, skipping")
             return orders    
     
@@ -266,56 +288,27 @@ class Trader:
         self.daysSinceCross += 1
 
         recentStandardDeviation: float = 0
-        for observation in self.bananasPriceMovingAverage:
+        for observation in self.shortMovingAverages[product]:
             recentStandardDeviation += (observation - priceAverage) ** 2
 
-        recentStandardDeviation = (recentStandardDeviation / len(self.bananasPriceMovingAverage)) ** 0.5
+        recentStandardDeviation = (recentStandardDeviation / len(self.shortMovingAverages[product])) ** 0.5
 
-        self.writeLog(state, product, priceAverage, priceLongAverage, recentStandardDeviation, self.daysSinceCross, self.tryToBuy)
+        self.writeLog(state, product, priceAverage, priceLongAverage, recentStandardDeviation, immediateVelocity, longerVelocity)
 
         if len(order_depth.sell_orders) > 0: # we are going to consider buying
             print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
-            possiblePrices = sorted(order_depth.sell_orders.keys(), reverse=True)
-
             acceptable_buy_price = priceAverage - recentStandardDeviation * self.stddevThreshold
-            for price in possiblePrices:
-                if price < acceptable_buy_price:
-                    possibleQuantity: int = -1 * order_depth.sell_orders[price] # becomes some positive number
-                    if possibleQuantity + currentProductAmount > self.maxPositionQuantity:
-                        print("CANNOT BUY", product, str(possibleQuantity) + "x", price, "WHEN SMA IS", priceAverage, "AND STDDEV IS", recentStandardDeviation)
-                        possibleQuantity = self.maxPositionQuantity - currentProductAmount
 
-                    if possibleQuantity > 0:
-                        if len(orders) > 0 and orders[-1].price == price:
-                            orders[-1].quantity += possibleQuantity
-                        else:
-                            orders.append(Order(product, price, possibleQuantity))
-                        # currentProductAmount += possibleQuantity
-                        print("TRYING TO BUY", product, str(possibleQuantity) + "x", price, "WHEN SMA IS", priceAverage, "AND STDDEV IS", recentStandardDeviation)
-                        
+            orders = orders + self.getAllOrdersBetterThan(product, state, True, acceptable_buy_price, currentProductAmount)
 
         if len(order_depth.buy_orders) > 0: # we are going to consider selling
             print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS BUY ORDERS: ", state.order_depths[product].buy_orders)
-            possiblePrices = sorted(order_depth.buy_orders.keys())
             acceptable_sell_price = priceAverage + recentStandardDeviation * self.stddevThreshold
-            for price in possiblePrices:
-                if price > acceptable_sell_price:
-                    possibleQuantity: int = -1 * order_depth.buy_orders[price] # becomes some negative number
-                    if possibleQuantity + currentProductAmount < -1 * self.maxPositionQuantity:
-                        possibleQuantity = -1 * self.maxPositionQuantity - currentProductAmount
-                        print("CANNOT SELL", product, str(possibleQuantity) + "x", price, "WHEN SMA IS", priceAverage, "AND STDDEV IS", recentStandardDeviation)
-                    if possibleQuantity < 0:                        
-                        if len(orders) > 0 and orders[-1].price == price:
-                            orders[-1].quantity += possibleQuantity
-                        else:
-                            orders.append(Order(product, price, possibleQuantity))
 
-                        # currentProductAmount += possibleQuantity
-                        print("TRYING TO SELL", product, str(possibleQuantity) + "x", price, "WHEN SMA IS", priceAverage, "AND STDDEV IS", recentStandardDeviation)
-
+            orders = orders + self.getAllOrdersBetterThan(product, state, False, acceptable_sell_price, currentProductAmount)
         return orders
 
-    def handlePinaColadas(self, state: TradingState, product: str, currentProductAmount: int) -> List[Order]:
+    def handlePinaColadas(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
         
         order_depth = state.order_depths[product]
         #get effective price
@@ -331,28 +324,48 @@ class Trader:
         
         ratio = normalizedPrice / normalizedCoconutPrice
 
-        self.writeLog(state, product, normalizedPrice, normalizedCoconutPrice, ratio, 1 + self.minPinaColadaRatioDifference, 1 - self.minPinaColadaRatioDifference)
+        # this helps us avoid selling on long-term upswings and buying on long-term downswings until they turn around
+        base = Trader.clamp(1 + self.ultraLongVelocities["COCONUTS"] / 2500, 0.9, 1.1)
 
-        if ratio > 1 + self.minPinaColadaRatioDifference:
+        self.writeLog(state, product, normalizedPrice, normalizedCoconutPrice, ratio, base + self.minPinaColadaRatioDifference, base - self.minPinaColadaRatioDifference)
+
+        if abs(ratio - base) < self.minPinaColadaRatioDifference:
+            print("Ratio is: ", ratio, " which is within the threshold of ", self.minPinaColadaRatioDifference, " at time ", state.timestamp, " so not trading")
+            return orders
+
+        if ratio > base + self.minPinaColadaRatioDifference:
             # sell pina coladas, matching all open buy orders greater than the effective price - 1
-            for price in sorted(order_depth.buy_orders.keys()):
-                if price >= effectivePrice - 2:
-                    desiredQuantity = -1 * order_depth.buy_orders[price]
-                    desiredQuantity = Trader.capVolume(currentProductAmount, desiredQuantity, Trader.maxPinaColadaQuantity)
-                    orders.append(Order(product, price, desiredQuantity))
-        
-        if ratio < 1 - self.minPinaColadaRatioDifference:
+            orders = orders + self.getAllOrdersBetterThan(product, state, False, effectivePrice - 1 - 0*abs(1 - ratio), currentProductAmount)
+        if ratio < base - self.minPinaColadaRatioDifference:
             # buy pina coladas, matching all open sell orders less than the effective price + 1
-            for price in sorted(order_depth.sell_orders.keys(), reverse=True):
-                if price <= effectivePrice + 2:
-                    desiredQuantity = -1 * order_depth.sell_orders[price]
-                    desiredQuantity = Trader.capVolume(currentProductAmount, desiredQuantity, -1 * Trader.maxPinaColadaQuantity)
-                    orders.append(Order(product, price, desiredQuantity))
-
+            # ratio under 1, so multiply price by (2-ratio) to increase price as ratio decreases
+            orders = orders + self.getAllOrdersBetterThan(product, state, True, effectivePrice + 1 + 0*abs(1 - ratio), currentProductAmount)
+        
         return orders
 
+    def handleCoconuts(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
 
+        if len(self.shortMovingAverages[product]) < self.shortMovingAverageSize:
+            return []
+        
+        order_depth = state.order_depths[product]
+        shortMovingAverage = self.shortMovingAverages[product][-1]
+        longMovingAverage = self.longMovingAverages[product][-1]
+        velocity = self.shortVelocities[product]
+        ultraLongVelocity = self.ultraLongVelocities[product]
+        effectivePrice = self.getEffectivePrice(order_depth)
+        orders: list[Order] = []
 
+        self.writeLog(state, product, shortMovingAverage, longMovingAverage, velocity, ultraLongVelocity)
+
+        if (velocity < -100):
+            # now on a downward trend, so sell all coconuts
+            orders = orders + self.getAllOrdersBetterThan(product, state, False, effectivePrice, currentProductAmount)
+        elif (velocity > 100):
+            # now on an upward trend, so buy all coconuts
+            orders = orders + self.getAllOrdersBetterThan(product, state, True, effectivePrice, currentProductAmount)
+
+        return orders
 
     def PriceOrder(self, product, buy : int, state : TradingState, price : int, volumeLimit = 0, printTime = False):
         """Trades best prices until price hit (inclusive), optional max volume traded
@@ -431,6 +444,31 @@ class Trader:
                 print("Next Best:", nextBest)
             return ordersMade, (PriceTraded, -VolumeTraded, TradeFill, nextBest)
 
+    def getAllOrdersBetterThan(self, product: str, state: TradingState, isBuying: bool, price: int, currentProductAmount: int) -> list[Order]:
+        orders: list[Order] = []
+        order_depth: OrderDepth = state.order_depths[product]
+        maxAmount: int = Trader.maxQuantities[product]
+
+        if isBuying:
+            print("Looking to buy " + product + " at time " + str(state.timestamp) + " with price better than " + str(price) + " and orders: " + str(order_depth.sell_orders))
+            for orderPrice in sorted(order_depth.sell_orders.keys(), reverse=True):
+                if orderPrice <= price:
+                    possibleQuantity: int = -1 * order_depth.sell_orders[orderPrice]
+                    possibleQuantity = Trader.capVolume(currentProductAmount, possibleQuantity, maxAmount)
+                    if possibleQuantity != 0:
+                        orders.append(Order(product, orderPrice, possibleQuantity))
+                        print("BUYING" + product + "AT TIME" + str(state.timestamp) + "WITH PRICE" + str(orderPrice) + "AND QUANTITY" + str(possibleQuantity))
+        else: # selling
+            print("Looking to sell " + product + " at time " + str(state.timestamp) + " with price better than " + str(price) + " and orders: " + str(order_depth.buy_orders))
+            for orderPrice in sorted(order_depth.buy_orders.keys(), reverse=False):
+                if orderPrice >= price:
+                    possibleQuantity: int = -1 * order_depth.buy_orders[orderPrice]
+                    possibleQuantity = Trader.capVolume(currentProductAmount, possibleQuantity, -1 * maxAmount)
+                    if possibleQuantity != 0:
+                        orders.append(Order(product, orderPrice, possibleQuantity))
+                        print("SELLING" + product + "AT TIME" + str(state.timestamp) + "WITH PRICE" + str(orderPrice) + "AND QUANTITY" + str(possibleQuantity))
+        
+        return orders
     
     def getBestPossiblePrice(self, order_depth: OrderDepth, isBuying: bool, offset: int = 0) -> int:
         if isBuying:
@@ -444,8 +482,15 @@ class Trader:
 
         return possiblePrices[offset]
 
-    def processMovingAverage(self, movingAverage: List[float], movingAverageLength: int, nextValue: float, isSimple: bool = False) -> float:
+    def processMovingAverage(self, product: str, movingAverageLength: int, nextValue: float, isSimple: bool = False) -> float:
         
+        if movingAverageLength == self.longMovingAverageSize:
+            movingAverage = self.longMovingAverages[product]
+        elif movingAverageLength == self.shortMovingAverageSize:
+            movingAverage = self.shortMovingAverages[product]
+        else:
+            movingAverage = self.ultraLongMovingAverages[product]
+
         if len(movingAverage) < movingAverageLength or isSimple:  # append the simple moving average
             movingAverage.append(nextValue)
         else: # append the exponential moving average
@@ -456,10 +501,12 @@ class Trader:
         if len(movingAverage) > movingAverageLength:
             movingAverage.pop(0)
 
-        if len(movingAverage) < movingAverageLength or isSimple:
-            return Trader.computeSimpleAverage(self, movingAverage) # return the simple moving average
+        if movingAverageLength == self.longMovingAverageSize:
+            self.longVelocities[product] = movingAverage[-1] - movingAverage[0]
+        elif movingAverageLength == self.shortMovingAverageSize:
+            self.shortVelocities[product] = movingAverage[-1] - movingAverage[0]
         else:
-            return movingAverage[-1] # return the exponential moving average
+            self.ultraLongVelocities[product] = movingAverage[-1] - movingAverage[0]
 
     def computeSimpleAverage(self, list: List) -> float:
         if len(list) == 0:
@@ -490,6 +537,16 @@ class Trader:
         
         return avg
 
+
+    def writeLog(self, state: TradingState, product: str, c1 = 0, c2 = 0, c3 = 0, c4 = 0, c5 = 0):
+        currentProductAmount = state.position.get(product, 0)
+        bid = Trader.getBestPossiblePrice(self, state.order_depths[product], True)
+        effectivePrice = Trader.getEffectivePrice(self, state.order_depths[product])
+        ask = Trader.getBestPossiblePrice(self, state.order_depths[product], False)
+        print(state.timestamp, '"' + product + '"', currentProductAmount, bid, effectivePrice, ask, c1,c2,c3,c4,c5, '"CSVDATA"', sep=",")
+
+######### UTILITY FUNCTIONS #########
+
     '''
     Static method to cap the volume of an order to avoid exceeding the cap
     -7, -4, -10 -> -3
@@ -499,9 +556,8 @@ class Trader:
             return cap - current
         return delta
     
-    def writeLog(self, state: TradingState, product: str, c1 = 0, c2 = 0, c3 = 0, c4 = 0, c5 = 0):
-        currentProductAmount = state.position.get(product, 0)
-        bid = Trader.getBestPossiblePrice(self, state.order_depths[product], True)
-        effectivePrice = Trader.getEffectivePrice(self, state.order_depths[product])
-        ask = Trader.getBestPossiblePrice(self, state.order_depths[product], False)
-        print(state.timestamp, '"' + product + '"', currentProductAmount, bid, effectivePrice, ask, c1,c2,c3,c4,c5, '"CSVDATA"', sep=",")
+    def weightedAverage(x1, x2, distance):
+        return x1 + (x2 - x1) * distance
+    
+    def clamp(n, minn, maxn):
+        return max(min(maxn, n), minn)
