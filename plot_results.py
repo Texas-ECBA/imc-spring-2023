@@ -3,14 +3,14 @@ import matplotlib.pyplot as plt
 import re # for regex
 
 # CONFIGURABLES
-filename = "l0.log"
+filename = "l3.log"
 plot_bid_and_ask = False
 plot_price = True
 plot_pnl = True
 plot_products = ["PINA_COLADAS", "COCONUTS"]
 customs_to_plot = {
     "PINA_COLADAS": ["PC NPrice", "Coconut NPrice", "Ratio", "+t", "-t"],
-    "COCONUTS": ["long*"],
+    "COCONUTS": ["longAcc", "ultraLongAcc"],
     "PEARLS": [],
     "BANANAS": ["shortMa", "ultra*"],
 }    
@@ -32,7 +32,7 @@ productToCustomSeries = {
     "PEARLS": common_customs + ["CUSTOM1", "CUSTOM2", "CUSTOM3", "CUSTOM4", "CUSTOM5"],
     "BANANAS": common_customs + ["CUSTOM1", "CUSTOM2", "CUSTOM3", "CUSTOM4", "CUSTOM5"],
     "PINA_COLADAS": common_customs + ["PC NPrice", "Coconut NPrice", "Ratio", "+t", "-t"],
-    "COCONUTS": common_customs + ["CUSTOM1", "CUSTOM2", "CUSTOM3", "CUSTOM4", "CUSTOM5"],
+    "COCONUTS": common_customs + ["currentVel", "delayedVel"],
 }
 
 custom_colors = ["red", "green", "blue", "orange", "purple", "silver", "black", "pink", "brown", "gray", "olive", "cyan", "magenta",  "teal", "coral", "navy", "maroon", "turquoise", "violet", "silver",  "khaki", "indigo", "darkgreen", "darkblue", "darkred", "darkorange", "darkgray", "darkcyan", "darkmagenta", "darkolivegreen", "darkkhaki", "darkgoldenrod", "darkviolet", "darkslategray", "darkslateblue", "darkseagreen", "darkorchid"]

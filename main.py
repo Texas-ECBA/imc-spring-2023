@@ -370,18 +370,28 @@ class Trader:
 
         recentStandardDeviation = (recentStandardDeviation / len(self.shortMovingAverages[product])) ** 0.5
 
-        self.writeLog(state, product, priceAverage, priceLongAverage, recentStandardDeviation)
+        self.writeLog(state, product, self.longVelocities[product][-1], self.longVelocities[product][0])
 
-        return []
-        if len(order_depth.sell_orders) > 0: # we are going to consider buying
+        if len(self.longVelocities[product]) < self.longMovingAverageSize / 2:
+            return orders
+
+        shouldBuy = False
+        shouldSell = False
+        if self.longVelocities[product][-1] > 0 and self.longVelocities[product][self.longMovingAverageSize // 2] < 0:
+            shouldBuy = True
+
+        if self.longVelocities[product][-1] < 0 and self.longVelocities[product][self.longMovingAverageSize // 2] > 0:
+            shouldSell = True
+
+        if len(order_depth.sell_orders) > 0 and shouldBuy: # we are going to consider buying
             print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
-            acceptable_buy_price = priceAverage - recentStandardDeviation * self.stddevThreshold
+            acceptable_buy_price = priceAverage + 1
 
             orders = orders + self.getAllOrdersBetterThan(product, state, True, acceptable_buy_price, currentProductAmount)
 
-        if len(order_depth.buy_orders) > 0: # we are going to consider selling
+        if len(order_depth.buy_orders) > 0 and shouldSell: # we are going to consider selling
             print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS BUY ORDERS: ", state.order_depths[product].buy_orders)
-            acceptable_sell_price = priceAverage + recentStandardDeviation * self.stddevThreshold
+            acceptable_sell_price = priceAverage - 1
 
             orders = orders + self.getAllOrdersBetterThan(product, state, False, acceptable_sell_price, currentProductAmount)
         return orders
@@ -589,9 +599,9 @@ class Trader:
         longMa = self.longMovingAverages[product][-1]
         ultraLongMa = self.ultraLongMovingAverages[product][-1]
 
-        shortVel = self.shortVelocities[product][-1]
-        longVel = self.longVelocities[product][-1]
-        ultraLongVel = self.ultraLongVelocities[product][-1]
+        shortVel = 0 if len(self.shortVelocities) == 0 else self.shortVelocities[product][-1]
+        longVel = 0 if len(self.longVelocities) == 0 else self.longVelocities[product][-1]
+        ultraLongVel = 0 if len(self.ultraLongVelocities) == 0 else self.ultraLongVelocities[product][-1]
 
         shortAcc = self.shortAccelerations[product]
         longAcc = self.longAccelerations[product]
