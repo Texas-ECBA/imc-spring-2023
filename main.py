@@ -117,6 +117,7 @@ class Trader:
     baseCoconutPrice: int = 0
     coconutsPriceMovingAverage: List[float] = []
     coconutsPriceMovingAverageLong: List[float] = []
+    coconutsCrossedUp: bool = False
 
     done_initializing: bool = False # we use this to detect state resets
 
@@ -171,7 +172,7 @@ class Trader:
         # Process the moving averages first
         for product in state.order_depths.keys():
             effectivePrice = self.getEffectivePrice(state.order_depths[product])
-            self.processMovingAverage(product, self.shortMovingAverageSize, effectivePrice, True)
+            self.processMovingAverage(product, self.shortMovingAverageSize, effectivePrice, False)
             self.processMovingAverage(product, self.longMovingAverageSize, effectivePrice, False)
             self.processMovingAverage(product, self.ultraLongMovingAverageSize, effectivePrice, False)
         # Handle buying and selling of each product
@@ -356,7 +357,9 @@ class Trader:
             return []
         
         order_depth = state.order_depths[product]
-        velocity = self.longVelocities[product][-1]
+        velocity = self.shortVelocities[product][-1]
+        previousVelocity = 0.0 if len(self.shortVelocities[product]) < 2 else self.shortVelocities[product][-2]
+
         effectivePrice = self.getEffectivePrice(order_depth)
         orders: list[Order] = []
 
@@ -370,28 +373,34 @@ class Trader:
 
         recentStandardDeviation = (recentStandardDeviation / len(self.shortMovingAverages[product])) ** 0.5
 
-        self.writeLog(state, product, self.longVelocities[product][-1], self.longVelocities[product][0])
+        self.writeLog(state, product, velocity, previousVelocity, self.coconutsCrossedUp)
 
-        if len(self.longVelocities[product]) < self.longMovingAverageSize / 2:
+        if len(self.shortVelocities[product]) < self.shortMovingAverageSize / 2:
             return orders
 
         shouldBuy = False
         shouldSell = False
-        if self.longVelocities[product][-1] > 0 and self.longVelocities[product][self.longMovingAverageSize // 2] < 0:
+        if velocity > 0 and previousVelocity < 0:
             shouldBuy = True
+            self.coconutsCrossedUp = True
+        else:
+            print("COCOUNUTS: velocity: ", velocity, " previousVelocity: ", previousVelocity, " at time ", state.timestamp, " so not changing cross")
 
-        if self.longVelocities[product][-1] < 0 and self.longVelocities[product][self.longMovingAverageSize // 2] > 0:
+        if velocity < 0 and previousVelocity > 0:
             shouldSell = True
+            self.coconutsCrossedUp = False
+        else:
+            print("COCOUNUTS: velocity: ", velocity, " previousVelocity: ", previousVelocity, " at time ", state.timestamp, " so not changing cross")
 
-        if len(order_depth.sell_orders) > 0 and shouldBuy: # we are going to consider buying
+        if len(order_depth.sell_orders) > 0 and self.coconutsCrossedUp: # we are going to consider buying
             print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
-            acceptable_buy_price = priceAverage + 1
+            acceptable_buy_price = priceAverage + 2
 
             orders = orders + self.getAllOrdersBetterThan(product, state, True, acceptable_buy_price, currentProductAmount)
 
-        if len(order_depth.buy_orders) > 0 and shouldSell: # we are going to consider selling
+        if len(order_depth.buy_orders) > 0 and not self.coconutsCrossedUp: # we are going to consider selling
             print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS BUY ORDERS: ", state.order_depths[product].buy_orders)
-            acceptable_sell_price = priceAverage - 1
+            acceptable_sell_price = priceAverage - 2
 
             orders = orders + self.getAllOrdersBetterThan(product, state, False, acceptable_sell_price, currentProductAmount)
         return orders
@@ -537,7 +546,9 @@ class Trader:
 
         if len(movingAverage) > 1:
             nextVelocity = movingAverage[-1] - movingAverage[-2]
-            if len(movingVelocity) < 5 or isSimple:
+            if len(movingVelocity) < 1:
+                movingVelocity.append(0)
+            elif isSimple:
                 movingVelocity.append(nextVelocity)
             else:
                 movingVelocity.append(

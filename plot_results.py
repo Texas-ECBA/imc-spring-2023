@@ -3,14 +3,16 @@ import matplotlib.pyplot as plt
 import re # for regex
 
 # CONFIGURABLES
-filename = "l3.log"
+filename = "l8.log"
 plot_bid_and_ask = False
 plot_price = True
 plot_pnl = True
-plot_products = ["PINA_COLADAS", "COCONUTS"]
+plot_zero_vel = True
+plot_zero_acc = True
+plot_products = ["COCONUTS"]
 customs_to_plot = {
     "PINA_COLADAS": ["PC NPrice", "Coconut NPrice", "Ratio", "+t", "-t"],
-    "COCONUTS": ["longAcc", "ultraLongAcc"],
+    "COCONUTS": ["cross"],
     "PEARLS": [],
     "BANANAS": ["shortMa", "ultra*"],
 }    
@@ -32,7 +34,7 @@ productToCustomSeries = {
     "PEARLS": common_customs + ["CUSTOM1", "CUSTOM2", "CUSTOM3", "CUSTOM4", "CUSTOM5"],
     "BANANAS": common_customs + ["CUSTOM1", "CUSTOM2", "CUSTOM3", "CUSTOM4", "CUSTOM5"],
     "PINA_COLADAS": common_customs + ["PC NPrice", "Coconut NPrice", "Ratio", "+t", "-t"],
-    "COCONUTS": common_customs + ["currentVel", "delayedVel"],
+    "COCONUTS": common_customs + ["vel", "prevVel", "cross"]
 }
 
 custom_colors = ["red", "green", "blue", "orange", "purple", "silver", "black", "pink", "brown", "gray", "olive", "cyan", "magenta",  "teal", "coral", "navy", "maroon", "turquoise", "violet", "silver",  "khaki", "indigo", "darkgreen", "darkblue", "darkred", "darkorange", "darkgray", "darkcyan", "darkmagenta", "darkolivegreen", "darkkhaki", "darkgoldenrod", "darkviolet", "darkslategray", "darkslateblue", "darkseagreen", "darkorchid"]
@@ -175,11 +177,15 @@ for kv in enumerate(plot_products):
     
     if plot_pnl:
         fifth_ax = axs[i].twinx()
-        lines = lines + fifth_ax.plot(timestamps[product], pnls[product], label="PNL", color="black", linestyle="--")
+        lines = lines + fifth_ax.plot(timestamps[product], pnls[product], label="PNL", color="green", linestyle="--", alpha=0.5)
         fifth_ax.spines['right'].set_position(('outward', num_axes * mult))
         num_axes += 1
         
     if hasVel:
+        if plot_zero_vel:
+            # plot zero line
+            vel_ax.plot(timestamps[product], [0] * len(timestamps[product]), color=custom_colors[vel_j_val], linestyle="--")
+        
         vel_ax.spines['right'].set_position(('outward', num_axes * mult))
         # make the spine style dashed
         vel_ax.spines['right'].set_linestyle("--")
@@ -189,6 +195,9 @@ for kv in enumerate(plot_products):
         num_axes += 1
     
     if hasAcc:
+        if plot_zero_acc:
+            # plot zero line
+            acc_ax.plot(timestamps[product], [0] * len(timestamps[product]), color=custom_colors[acc_j_val], linestyle=":")
         acc_ax.spines['right'].set_position(('outward', num_axes * mult))
         # make the spine style dotted
         acc_ax.spines['right'].set_linestyle(":")
