@@ -80,71 +80,30 @@ class Trader:
         "BANANAS": 20,
         "PEARLS": 20,
         "PINA_COLADAS": 300,
-        "COCONUTS": 600
+        "COCONUTS": 600,
+        "DIVING_GEAR": 50,
+        "BERRIES": 250,
     }
+
+    trackingStatsOf = ["BANANAS", "PEARLS", "PINA_COLADAS", "COCONUTS", "DIVING_GEAR", "BERRIES", "DOLPHIN_SIGHTINGS"]
     
-    shortMovingAverages: Dict[Product, List[float]] = {
-        "BANANAS": [],
-        "PEARLS": [],
-        "PINA_COLADAS": [],
-        "COCONUTS": []
-    }
+    shortMovingAverages: Dict[Product, List[float]] = {    }
 
-    longMovingAverages: Dict[Product, List[float]] = {
-        "BANANAS": [],
-        "PEARLS": [],
-        "PINA_COLADAS": [],
-        "COCONUTS": []
-    }
+    longMovingAverages: Dict[Product, List[float]] = {    }
 
-    ultraLongMovingAverages: Dict[Product, List[float]] = {
-        "BANANAS": [],
-        "PEARLS": [],
-        "PINA_COLADAS": [],
-        "COCONUTS": []
-    }
+    ultraLongMovingAverages: Dict[Product, List[float]] = {    }
 
-    shortVelocities: Dict[Product, List[float]] = {
-        "BANANAS": [],
-        "PEARLS": [],
-        "PINA_COLADAS": [],
-        "COCONUTS": []
-    }
+    shortVelocities: Dict[Product, List[float]] = {    }
 
-    longVelocities: Dict[Product, List[float]] = {
-        "BANANAS": [],
-        "PEARLS": [],
-        "PINA_COLADAS": [],
-        "COCONUTS": []
-    }
+    longVelocities: Dict[Product, List[float]] = {    }
 
-    ultraLongVelocities: Dict[Product, List[float]] = {
-        "BANANAS": [],
-        "PEARLS": [],
-        "PINA_COLADAS": [],
-        "COCONUTS": []
-    }
+    ultraLongVelocities: Dict[Product, List[float]] = {    }
 
-    shortAccelerations: Dict[Product, float] = {
-        "BANANAS": 0.0,
-        "PEARLS": 0.0,
-        "PINA_COLADAS": 0.0,
-        "COCONUTS": 0.0
-    }
+    shortAccelerations: Dict[Product, float] = {    }
 
-    longAccelerations: Dict[Product, float] = {
-        "BANANAS": 0.0,
-        "PEARLS": 0.0,
-        "PINA_COLADAS": 0.0,
-        "COCONUTS": 0.0
-    }
+    longAccelerations: Dict[Product, float] = {    }
 
-    ultraLongAccelerations: Dict[Product, float] = {
-        "BANANAS": 0.0,
-        "PEARLS": 0.0,
-        "PINA_COLADAS": 0.0,
-        "COCONUTS": 0.0
-    }
+    ultraLongAccelerations: Dict[Product, float] = {    }
     
 
     shortTermAboveLongTerm: bool = False
@@ -171,6 +130,20 @@ class Trader:
     pearl_acceptable_price = 10000
     # ignored for now
     bananasQuantityAffinity: int = 2
+
+
+    def __init__(self):
+        # initialize the tracked stats
+        for product in self.trackingStatsOf:
+            self.shortMovingAverages[product] = []
+            self.longMovingAverages[product] = []
+            self.ultraLongMovingAverages[product] = []
+            self.shortVelocities[product] = []
+            self.longVelocities[product] = []
+            self.ultraLongVelocities[product] = []
+            self.shortAccelerations[product] = 0
+            self.longAccelerations[product] = 0
+            self.ultraLongAccelerations[product] = 0
 
     """
     Only method required. It takes all buy and sell orders for all symbols as an input,
@@ -221,6 +194,16 @@ class Trader:
 
             if product == 'COCONUTS':
                 result[product] = self.handleCoconuts(state, product, currentProductAmount)
+                pass
+
+            if product == 'DIVING_GEAR':
+                # result[product] = self.handleDivingGear(state, product, currentProductAmount)
+                self.writeLog(state, product)
+                pass
+
+            if product == 'MAYBERRIES':
+                # result[product] = self.handleMayberries(state, product, currentProductAmount)
+                self.writeLog(state, product)
                 pass
 
         return result
@@ -369,7 +352,6 @@ class Trader:
         return orders
 
     def handleCoconuts(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
-        return []
         if len(self.shortMovingAverages[product]) < self.shortMovingAverageSize:
             return []
         
@@ -390,6 +372,7 @@ class Trader:
 
         self.writeLog(state, product, priceAverage, priceLongAverage, recentStandardDeviation)
 
+        return []
         if len(order_depth.sell_orders) > 0: # we are going to consider buying
             print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
             acceptable_buy_price = priceAverage - recentStandardDeviation * self.stddevThreshold
