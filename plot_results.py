@@ -3,19 +3,36 @@ import matplotlib.pyplot as plt
 import re # for regex
 
 # CONFIGURABLES
-filename = "l3.log"
+filename = "l7.log"
+plotCombo = 0
+
+if plotCombo == 0:
+    plot_products = ["PINA_COLADAS", "COCONUTS"]
+elif plotCombo == 1:
+    plot_products = ["DIVING_GEAR"]
+else:
+    plot_products = ["BERRIES"]
+
 plot_bid_and_ask = False
 plot_price = True
 plot_pnl = True
 plot_position = True
+
 plot_zero_vel = True
 plot_zero_acc = False
-plot_products = ["COCONUTS"]
+plot_zero_pnl = False
+plot_const_customs = [1]
+
 customs_to_plot = {
-    "PINA_COLADAS": ["PC NPrice", "Coconut NPrice", "Ratio", "+t", "-t"],
-    "COCONUTS": ["longAcc", "shortAcc"],
     "PEARLS": [],
-    "BANANAS": ["shortMa", "ultra*"],
+    "BANANAS": ["shortMa", "ultraLongMa", "longMa"],
+
+    "PINA_COLADAS": ["Ratio", "+t", "-t","longVel", "longAcc", "versusAcc", "*NPrice"],
+    "COCONUTS": ["ultraLongMa", "longMa",  "shortMa", "ultraLongVel", "longVel",  "ultraLongAcc", "longAcc"],    
+
+    "BERRIES": ["ultraLongMa", "longMa",  "shortMa", "shortVel", "buyPrice", "sellPrice"],
+    "DOLPHIN_SIGHTINGS": ["longVel", "ultraLongVel"],
+    "DIVING_GEAR": ["shortMa", "ultraLongMa", "longAcc", "shortVel"],
 }
 # END CONFIGURABLES
 
@@ -27,18 +44,21 @@ asks: dict[str, list[float]] = {}
 positions: dict[str, list[float]] = {}
 customs: dict[str, list[list[float]]] = {}
 pnls: dict[str, list[float]] = {}
-products = ["PEARLS", "BANANAS", "PINA_COLADAS", "COCONUTS"]
+products = ["PEARLS", "BANANAS", "PINA_COLADAS", "COCONUTS", "BERRIES", "DOLPHIN_SIGHTINGS", "DIVING_GEAR"]
 
 common_customs = ["shortMa", "longMa", "ultraLongMa", "shortVel", "longVel", "ultraLongVel", "shortAcc", "longAcc", "ultraLongAcc",]
 
 productToCustomSeries = {
     "PEARLS": common_customs + ["CUSTOM1", "CUSTOM2", "CUSTOM3", "CUSTOM4", "CUSTOM5"],
-    "BANANAS": common_customs + ["CUSTOM1", "CUSTOM2", "CUSTOM3", "CUSTOM4", "CUSTOM5"],
-    "PINA_COLADAS": common_customs + ["PC NPrice", "Coconut NPrice", "Ratio", "+t", "-t"],
-    "COCONUTS": common_customs + ["vel", "prevVel", "cross"]
+    "BANANAS": common_customs + ["buyPrice", "sellPrice"],
+    "PINA_COLADAS": common_customs + ["PC NPrice", "Coconut NPrice", "Ratio", "+t", "-t", "versusAcc"],
+    "COCONUTS": common_customs + ["buyPrice", "sellPrice", "Diff", "sigDiff"],
+    "BERRIES": common_customs + ["buyPrice", "sellPrice", "Diff"],
+    "DOLPHIN_SIGHTINGS": common_customs + [],
+    "DIVING_GEAR": common_customs + ["buyPrice", "sellPrice", "Diff", "sigdiff"],
 }
 
-custom_colors = ["red", "green", "blue", "orange", "purple", "silver", "black", "pink", "brown", "gray", "olive", "cyan", "magenta",  "teal", "coral", "navy", "maroon", "turquoise", "violet", "silver",  "khaki", "indigo", "darkgreen", "darkblue", "darkred", "darkorange", "darkgray", "darkcyan", "darkmagenta", "darkolivegreen", "darkkhaki", "darkgoldenrod", "darkviolet", "darkslategray", "darkslateblue", "darkseagreen", "darkorchid"]
+custom_colors = ["red", "green", "blue", "orange", "purple", "silver", "black", "pink", "brown",  "olive", "cyan", "magenta",  "coral", "navy", "maroon", "violet",   "khaki", "indigo", "darkgreen", "darkblue", "darkred", "darkorange", "darkgray", "darkcyan", "darkmagenta", "darkolivegreen", "darkkhaki", "darkgoldenrod", "darkviolet", "darkslategray", "darkslateblue", "darkseagreen", "darkorchid"]
 
 #TIMESTAMP, PRODUCT, POSITION, BID, PRICE, ASK, shortMa, longMa, ultraLongMa, shortVel, longVel, ultraLongVel, shortAcc, longAcc, ultraLongAcc, custom1, custom2, custom3, custom4, custom5
 #day;timestamp;product;bid_price_1;bid_volume_1;bid_price_2;bid_volume_2;bid_price_3;bid_volume_3;ask_price_1;ask_volume_1;ask_price_2;ask_volume_2;ask_price_3;ask_volume_3;mid_price;profit_and_loss
@@ -108,10 +128,10 @@ def isCustomExcluded(product, seriesLabel):
 # number of plots is number of products where timestamps are not empty
 num_plots = len([i for i in timestamps if len(timestamps[i]) > 0])
 
-fig, axs = plt.subplots(num_plots, 1, figsize=(10, 10))
+fig, axsRes = plt.subplots(num_plots, 1, figsize=(10, 10), squeeze=False, sharex=True)
 
-if num_plots == 1:
-    axs = [axs]
+axs = [axsRes[i][0] for i in range(len(axsRes))]
+
 
 i = 0
 for kv in enumerate(plot_products):
@@ -138,7 +158,7 @@ for kv in enumerate(plot_products):
 
     hasVel = False
     hasAcc = False
-
+    hasCustom = False
 
     seriesLabels = productToCustomSeries[product]
     for j in range(min(len(seriesLabels), len(customs[product]))):
@@ -160,9 +180,15 @@ for kv in enumerate(plot_products):
             lines = lines + acc_ax.plot(timestamps[product], customs[product][j], label=seriesLabel, color=custom_colors[j], linestyle=":")
             hasAcc = True
             acc_j_val = j
+        elif "price" in seriesLabel.lower():
+            # plot in the main axis as a solid line
+            lines = lines + axs[i].plot(timestamps[product], customs[product][j], label=seriesLabel, color=custom_colors[j])        
         else:
             lines = lines + secondary_ax.plot(timestamps[product], customs[product][j], label=seriesLabel, color=custom_colors[j]) 
-
+            if not hasCustom:
+                hasCustom = True
+                for const_val in plot_const_customs:
+                    secondary_ax.plot(timestamps[product], [const_val] * len(timestamps[product]), color=custom_colors[j], alpha=0.5)
 
     num_axes = 1
     mult = 50
@@ -171,14 +197,15 @@ for kv in enumerate(plot_products):
         lines = lines + tertiary_ax.plot(timestamps[product], positions[product], label="Position", color="black")
         tertiary_ax.spines['right'].set_position(('outward', num_axes * mult))
         num_axes += 1
-    
-
-    
+        
     if plot_pnl:
         fifth_ax = axs[i].twinx()
         lines = lines + fifth_ax.plot(timestamps[product], pnls[product], label="PNL", color="green", linestyle="--", alpha=0.5)
         fifth_ax.spines['right'].set_position(('outward', num_axes * mult))
         num_axes += 1
+        if plot_zero_pnl:
+            # plot zero line
+            fifth_ax.plot(timestamps[product], [0] * len(timestamps[product]), color="green", linestyle="--", alpha=0.5)
         
     if hasVel:
         if plot_zero_vel:
