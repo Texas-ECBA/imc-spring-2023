@@ -13,7 +13,7 @@ plot_zero_acc = False
 plot_products = ["COCONUTS"]
 customs_to_plot = {
     "PINA_COLADAS": ["PC NPrice", "Coconut NPrice", "Ratio", "+t", "-t"],
-    "COCONUTS": ["ultraLongMa", "longMa",  "shortMa", "ultraLongVel", "longVel"],
+    "COCONUTS": ["longAcc", "shortAcc"],
     "PEARLS": [],
     "BANANAS": ["shortMa", "ultra*"],
 }

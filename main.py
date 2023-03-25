@@ -125,7 +125,7 @@ class Trader:
     # CONFIGURABLE PARAMETERS
     shortMovingAverageSize: int = 10
     longMovingAverageSize: int = 50
-    ultraLongMovingAverageSize: int = 200
+    ultraLongMovingAverageSize: int = 100
     stddevThreshold: float = 0.5
     exponentialSmoothing: float = 2.0
     # Define a fair value for the PEARLS.
@@ -198,15 +198,15 @@ class Trader:
                 result[product] = self.handleCoconuts(state, product, currentProductAmount)
                 pass
 
-            if product == 'DIVING_GEAR':
-                # result[product] = self.handleDivingGear(state, product, currentProductAmount)
-                self.writeLog(state, product)
-                pass
+            # if product == 'DIVING_GEAR':
+            #     # result[product] = self.handleDivingGear(state, product, currentProductAmount)
+            #     self.writeLog(state, product)
+            #     pass
 
-            if product == 'MAYBERRIES':
-                # result[product] = self.handleMayberries(state, product, currentProductAmount)
-                self.writeLog(state, product)
-                pass
+            # if product == 'MAYBERRIES':
+            #     # result[product] = self.handleMayberries(state, product, currentProductAmount)
+            #     self.writeLog(state, product)
+            #     pass
 
         return result
     
