@@ -3,19 +3,20 @@ import matplotlib.pyplot as plt
 import re # for regex
 
 # CONFIGURABLES
-filename = "l8.log"
+filename = "l3.log"
 plot_bid_and_ask = False
 plot_price = True
 plot_pnl = True
+plot_position = True
 plot_zero_vel = True
-plot_zero_acc = True
+plot_zero_acc = False
 plot_products = ["COCONUTS"]
 customs_to_plot = {
     "PINA_COLADAS": ["PC NPrice", "Coconut NPrice", "Ratio", "+t", "-t"],
-    "COCONUTS": ["cross"],
+    "COCONUTS": ["ultraLongMa", "longMa",  "shortMa", "ultraLongVel", "longVel"],
     "PEARLS": [],
     "BANANAS": ["shortMa", "ultra*"],
-}    
+}
 # END CONFIGURABLES
 
 
@@ -128,8 +129,6 @@ for kv in enumerate(plot_products):
         lines = lines + axs[i].plot(timestamps[product], bids[product], label="Bid")
         lines = lines + axs[i].plot(timestamps[product], asks[product], label="Ask")
     
-
-
     # plot custom series on secondary y axis, and also make sure they are labeled
     secondary_ax = axs[i].twinx()
     vel_ax = axs[i].twinx()
@@ -167,7 +166,7 @@ for kv in enumerate(plot_products):
 
     num_axes = 1
     mult = 50
-    if len(positions[product]) > 0:
+    if plot_position and len(positions[product]) > 0:
         tertiary_ax = axs[i].twinx()
         lines = lines + tertiary_ax.plot(timestamps[product], positions[product], label="Position", color="black")
         tertiary_ax.spines['right'].set_position(('outward', num_axes * mult))

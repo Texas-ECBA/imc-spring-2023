@@ -118,12 +118,13 @@ class Trader:
     coconutsPriceMovingAverage: List[float] = []
     coconutsPriceMovingAverageLong: List[float] = []
     coconutsCrossedUp: bool = False
+    coconutsDaysSinceCross: int = 0
 
     done_initializing: bool = False # we use this to detect state resets
 
     # CONFIGURABLE PARAMETERS
     shortMovingAverageSize: int = 10
-    longMovingAverageSize: int = 40
+    longMovingAverageSize: int = 50
     ultraLongMovingAverageSize: int = 200
     stddevThreshold: float = 0.5
     exponentialSmoothing: float = 2.0
@@ -365,42 +366,50 @@ class Trader:
 
         priceAverage: float = Trader.computeSimpleAverage(self, self.shortMovingAverages[product])
         priceLongAverage: float = Trader.computeSimpleAverage(self, self.longMovingAverages[product])
-        
-        
+                
         recentStandardDeviation: float = 0
         for observation in self.shortMovingAverages[product]:
             recentStandardDeviation += (observation - priceAverage) ** 2
 
         recentStandardDeviation = (recentStandardDeviation / len(self.shortMovingAverages[product])) ** 0.5
 
-        self.writeLog(state, product, velocity, previousVelocity, self.coconutsCrossedUp)
 
         if len(self.shortVelocities[product]) < self.shortMovingAverageSize / 2:
             return orders
 
         shouldBuy = False
         shouldSell = False
-        if velocity > 0 and previousVelocity < 0:
-            shouldBuy = True
+        if velocity > 0.01 and previousVelocity < 0:
             self.coconutsCrossedUp = True
-        else:
-            print("COCOUNUTS: velocity: ", velocity, " previousVelocity: ", previousVelocity, " at time ", state.timestamp, " so not changing cross")
+            self.coconutsDaysSinceCross = 0
 
-        if velocity < 0 and previousVelocity > 0:
-            shouldSell = True
+        if velocity < -0.01 and previousVelocity > 0:
             self.coconutsCrossedUp = False
-        else:
-            print("COCOUNUTS: velocity: ", velocity, " previousVelocity: ", previousVelocity, " at time ", state.timestamp, " so not changing cross")
+            self.coconutsDaysSinceCross = 0
 
-        if len(order_depth.sell_orders) > 0 and self.coconutsCrossedUp: # we are going to consider buying
+        if self.coconutsCrossedUp and self.coconutsDaysSinceCross > 5:
+            shouldBuy = True
+
+        if not self.coconutsCrossedUp and self.coconutsDaysSinceCross > 5:
+            shouldSell = True
+
+        self.coconutsDaysSinceCross += 1
+
+        self.writeLog(state, product, priceAverage + 2 + self.ultraLongVelocities[product][-1] * 2, priceAverage - 2 + self.ultraLongVelocities[product][-1] * 2)
+        
+        shortMa = self.shortMovingAverages[product][-1]
+        longMa = self.longMovingAverages[product][-1]
+        ultraLongMa = self.ultraLongMovingAverages[product][-1]
+
+        if len(order_depth.sell_orders) > 0 and shortMa > longMa and longMa > ultraLongMa: # we are going to consider buying
             print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
-            acceptable_buy_price = priceAverage + 2
+            acceptable_buy_price = priceAverage + 2 + self.ultraLongVelocities[product][-1] * 2
 
             orders = orders + self.getAllOrdersBetterThan(product, state, True, acceptable_buy_price, currentProductAmount)
 
-        if len(order_depth.buy_orders) > 0 and not self.coconutsCrossedUp: # we are going to consider selling
+        if len(order_depth.buy_orders) > 0 and shortMa < longMa and longMa < ultraLongMa: # we are going to consider selling
             print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS BUY ORDERS: ", state.order_depths[product].buy_orders)
-            acceptable_sell_price = priceAverage - 2
+            acceptable_sell_price = priceAverage - 2 + self.ultraLongVelocities[product][-1] * 2
 
             orders = orders + self.getAllOrdersBetterThan(product, state, False, acceptable_sell_price, currentProductAmount)
         return orders
@@ -482,10 +491,10 @@ class Trader:
                 print("Next Best:", nextBest)
             return ordersMade, (PriceTraded, -VolumeTraded, TradeFill, nextBest)
 
-    def getAllOrdersBetterThan(self, product: str, state: TradingState, isBuying: bool, price: int, currentProductAmount: int) -> list[Order]:
+    def getAllOrdersBetterThan(self, product: str, state: TradingState, isBuying: bool, price: int, currentProductAmount: int, alt_max: int = -9999) -> list[Order]:
         orders: list[Order] = []
         order_depth: OrderDepth = state.order_depths[product]
-        maxAmount: int = Trader.maxQuantities[product]
+        maxAmount: int = alt_max if alt_max != -9999 else Trader.maxQuantities[product]
 
         if isBuying:
             print("Looking to buy " + product + " at time " + str(state.timestamp) + " with price better than " + str(price) + " and orders: " + str(order_depth.sell_orders))
@@ -533,7 +542,6 @@ class Trader:
             movingVelocity = self.ultraLongVelocities[product]
 
 
-
         if len(movingAverage) < 5 or isSimple:  # append the simple moving average
             movingAverage.append(nextValue)
         else: # append the exponential moving average
@@ -552,8 +560,8 @@ class Trader:
                 movingVelocity.append(nextVelocity)
             else:
                 movingVelocity.append(
-                    nextVelocity * (self.exponentialSmoothing / (1 + movingAverageLength)) +
-                    movingVelocity[-1] * (1 - (self.exponentialSmoothing / (1 + movingAverageLength))))
+                    nextVelocity * 0.2 +
+                    movingVelocity[-1] * 0.8)
                 
             if len(movingVelocity) > movingAverageLength:
                 movingVelocity.pop(0)
@@ -561,12 +569,14 @@ class Trader:
         if len(movingVelocity) < movingAverageLength:
             return
 
+        newAcceleration = movingVelocity[-1] - movingVelocity[-2]
+
         if movingAverageLength == self.shortMovingAverageSize:
-            self.shortAccelerations[product] = (movingVelocity[-1] - movingVelocity[0]) / len(movingVelocity)
+            self.shortAccelerations[product] = newAcceleration * 0.3 + self.shortAccelerations[product] * 0.7
         elif movingAverageLength == self.longMovingAverageSize:
-            self.longAccelerations[product] = (movingVelocity[-1] - movingVelocity[-2])
+            self.longAccelerations[product] = newAcceleration * 0.3 + self.longAccelerations[product] * 0.7
         else:
-            self.ultraLongAccelerations[product] = (movingVelocity[-1] - movingVelocity[-2])
+            self.ultraLongAccelerations[product] = newAcceleration * 0.3 + self.ultraLongAccelerations[product] * 0.7
 
         
 
@@ -610,9 +620,9 @@ class Trader:
         longMa = self.longMovingAverages[product][-1]
         ultraLongMa = self.ultraLongMovingAverages[product][-1]
 
-        shortVel = 0 if len(self.shortVelocities) == 0 else self.shortVelocities[product][-1]
-        longVel = 0 if len(self.longVelocities) == 0 else self.longVelocities[product][-1]
-        ultraLongVel = 0 if len(self.ultraLongVelocities) == 0 else self.ultraLongVelocities[product][-1]
+        shortVel = 0 if len(self.shortVelocities[product]) == 0 else self.shortVelocities[product][-1]
+        longVel = 0 if len(self.longVelocities[product]) == 0 else self.longVelocities[product][-1]
+        ultraLongVel = 0 if len(self.ultraLongVelocities[product]) == 0 else self.ultraLongVelocities[product][-1]
 
         shortAcc = self.shortAccelerations[product]
         longAcc = self.longAccelerations[product]
