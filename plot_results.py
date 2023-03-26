@@ -3,36 +3,37 @@ import matplotlib.pyplot as plt
 import re # for regex
 
 # CONFIGURABLES
-filename = "l7.log"
-plotCombo = 1
+filename = "output.txt"
+plotCombo = 0
 
 if plotCombo == 0:
     plot_products = ["PINA_COLADAS", "COCONUTS"]
 elif plotCombo == 1:
-    plot_products = ["DIVING_GEAR"]
-else:
     plot_products = ["BERRIES"]
+else:
+    plot_products = ["DOLPHIN_SIGHTINGS","DIVING_GEAR"]
 
 plot_bid_and_ask = False
 plot_price = True
-plot_pnl = True
+plot_pnl = False
 plot_position = True
 
 plot_zero_vel = True
 plot_zero_acc = False
 plot_zero_pnl = False
-plot_const_customs = [1]
+plot_const_customs = [0.0005, -0.0005, 0.0009, -0.0009]
 
 customs_to_plot = {
     "PEARLS": [],
     "BANANAS": ["shortMa", "ultraLongMa", "longMa"],
 
-    "PINA_COLADAS": ["Ratio", "+t", "-t","longVel", "longAcc", "versusAcc", "*NPrice"],
-    "COCONUTS": ["ultraLongMa", "longMa",  "shortMa", "ultraLongVel", "longVel",  "ultraLongAcc", "longAcc"],    
+    "PINA_COLADAS": ["Ratio", "+t", "-t", "*NPrice"],
+    "COCONUTS": ["ultraLongMa", ],    
 
-    "BERRIES": ["ultraLongMa", "longMa",  "shortMa", "shortVel", "buyPrice", "sellPrice"],
-    "DOLPHIN_SIGHTINGS": ["longVel", "ultraLongVel"],
-    "DIVING_GEAR": ["shortMa", "ultraLongMa", "longAcc", "shortVel"],
+    "BERRIES": ["ultraLongMa"],
+
+    "DOLPHIN_SIGHTINGS": ["trend*", "*Ma", "dolphinTrend"],
+    "DIVING_GEAR": [ "ultraLongVel", "Diff", "ultraLongMa", "ultraLongTrend"],
 }
 # END CONFIGURABLES
 
@@ -54,8 +55,8 @@ productToCustomSeries = {
     "PINA_COLADAS": common_customs + ["PC NPrice", "Coconut NPrice", "Ratio", "+t", "-t", "versusAcc"],
     "COCONUTS": common_customs + ["buyPrice", "sellPrice", "Diff", "sigDiff"],
     "BERRIES": common_customs + ["buyPrice", "sellPrice", "Diff"],
-    "DOLPHIN_SIGHTINGS": common_customs + [],
-    "DIVING_GEAR": common_customs + ["buyPrice", "sellPrice", "Diff", "sigdiff"],
+    "DOLPHIN_SIGHTINGS": common_customs + ["trend0", "trend1", "trend2", "possibleTrend", "dolphinTrend"],
+    "DIVING_GEAR": common_customs + ["ultraLongTrend", "Diff", "sigdiff"],
 }
 
 custom_colors = ["red", "green", "blue", "orange", "purple", "silver", "black", "pink", "brown",  "olive", "cyan", "magenta",  "coral", "navy", "maroon", "violet",   "khaki", "indigo", "darkgreen", "darkblue", "darkred", "darkorange", "darkgray", "darkcyan", "darkmagenta", "darkolivegreen", "darkkhaki", "darkgoldenrod", "darkviolet", "darkslategray", "darkslateblue", "darkseagreen", "darkorchid"]

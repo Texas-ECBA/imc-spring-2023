@@ -1,6 +1,6 @@
 from typing import Dict, List
 import pandas as pd
-from main import Order, OrderDepth, Trade, TradingState, Trader
+from main import Order, OrderDepth, Trade, TradingState, Trader, Observation
 import sys
 sys.stdout = open('output.txt','wt')
 
@@ -28,9 +28,11 @@ simulation = Trader()
 finalcsvoutput = ""
 
 while True:
-    order_depths : Dict[str, OrderDepth]
-    order_depths = {}
+    order_depths: Dict[str, OrderDepth] = {}
+    observations: Dict[str, Observation] = {}
+    
     while index < rowCount and time == day["timestamp"][index]:
+
         Midprice[day["product"][index]] = day["mid_price"][index]
         Depth = OrderDepth()
         for x in ((day["bid_price_1"][index], day["bid_volume_1"][index]), (day["bid_price_2"][index], day["bid_volume_2"][index]), (day["bid_price_3"][index], day["bid_volume_3"][index])):
@@ -39,11 +41,19 @@ while True:
         for x in ((day["ask_price_1"][index], day["ask_volume_1"][index]), (day["ask_price_2"][index], day["ask_volume_2"][index]), (day["ask_price_3"][index], day["ask_volume_3"][index])):
             if not(pd.isna(x[0])):
                 Depth.sell_orders[x[0]] = x[1]
-        order_depths[day["product"][index]] = Depth
+                
+        if day["product"][index] == "DOLPHIN_SIGHTINGS":
+            observations["DOLPHIN_SIGHTINGS"] = day["mid_price"][index]
+        else:
+            order_depths[day["product"][index]] = Depth
+
         index += 1
+
         if index == rowCount: break
+        
     if time == 1000000: break
-    state = TradingState(time, {}, order_depths, {}, {}, positions, {})
+
+    state = TradingState(time, {}, order_depths, {}, {}, positions, observations)
     simorders = simulation.run(state)
     
     market : Dict[int, Dict[str, Dict[int, int]]]
