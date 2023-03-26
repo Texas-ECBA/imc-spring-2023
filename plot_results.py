@@ -4,7 +4,7 @@ import re # for regex
 
 # CONFIGURABLES
 filename = "l7.log"
-plotCombo = 0
+plotCombo = 1
 
 if plotCombo == 0:
     plot_products = ["PINA_COLADAS", "COCONUTS"]

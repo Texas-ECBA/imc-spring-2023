@@ -735,6 +735,9 @@ class Trader:
         if len(movingAverage) > movingAverageLength:
             movingAverage.pop(0)
 
+        if len(movingVelocity) < 1:
+                movingVelocity.append(0)
+
         if len(movingAverage) > 1:
             nextVelocity = movingAverage[-1] - movingAverage[-2]
             if len(movingVelocity) < 1:
