@@ -434,7 +434,7 @@ def run_simulation(day = 1):
     #liqudation = bool(input("Should all positions be liquidated in the final run (sth. not blank for True): ")) or False
 
     max_time = 1000000
-    round = 3
+    round = 4
     halfway = True
     liqudation = True
 

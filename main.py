@@ -83,10 +83,15 @@ class Trader:
         "COCONUTS": 600,
         "DIVING_GEAR": 50,
         "BERRIES": 250,
+        'BAGUETTE': 150,
+        'DIP': 300,
+        'UKULELE': 70,
+        'PICNIC_BASKET': 70,
     }
 
-    trackingStatsOf = ["BANANAS", "PEARLS", "PINA_COLADAS", "COCONUTS", "DIVING_GEAR", "BERRIES", "DOLPHIN_SIGHTINGS"]
-    
+    trackingStatsOf = ['PEARLS', 'BANANAS', 'COCONUTS', 'PINA_COLADAS', 'DIVING_GEAR', 
+                       'BERRIES', 'DOLPHIN_SIGHTINGS', 'BAGUETTE', 'DIP', 'UKULELE', 'PICNIC_BASKET']
+
     shortMovingAverages: Dict[Product, List[float]] = {    }
 
     longMovingAverages: Dict[Product, List[float]] = {    }
@@ -130,6 +135,10 @@ class Trader:
     divingGearTrendDays: int = 0
     daysTryingToEndDivingGear: int = 0
 
+    ukuleleLastTradeTimestamp: int = -100
+    ukuleleLastTradePrice: float = 0
+    ukuleleLastTradeIsBuy: bool = False
+
     done_initializing: bool = False # we use this to detect state resets
 
     FullBuy = Hold = FullSell = False
@@ -168,6 +177,17 @@ class Trader:
         if not self.done_initializing:
             if state.timestamp > 0:
                 print("STATE MAY HAVE BEEN RESET")
+                print("ATTEMPTING TO FIX BERRIES!")
+                if state.timestamp >= 380000: 
+                    self.FullBuy = True
+                if state.timestamp >= 525000: 
+                    self.FullBuy = False
+                    self.Hold = False
+                    self.FullSell = True
+                if state.timestamp >= 775000: 
+                    self.Hold = False
+                    self.FullSell = False
+
             print("OPERATING WITH SMASIZE ", self.shortMovingAverageSize, "LONGSMASIZE", self.longMovingAverageSize, "ULTRALONGSMASIZE", self.ultraLongMovingAverageSize)
             self.done_initializing = True
 
@@ -197,6 +217,8 @@ class Trader:
             if product in state.observations or product not in self.trackingStatsOf:
                 continue
             midpointPrice = self.getMidpointPrice(state.order_depths[product])
+            if midpointPrice == -1:
+                continue
             self.processMovingAverage(product, self.shortMovingAverageSize, midpointPrice, False)
             self.processMovingAverage(product, self.longMovingAverageSize, midpointPrice, False)
             self.processMovingAverage(product, self.ultraLongMovingAverageSize, midpointPrice, False)
@@ -229,6 +251,22 @@ class Trader:
 
             if product == 'BERRIES':
                 result[product] = self.handleMayberries(state, product, currentProductAmount)
+                pass
+
+            if product == 'PICNIC_BASKET':
+                result[product] = self.handlePicnicBaskets(state, product, currentProductAmount)
+                pass
+
+            if product == 'BAGUETTE':
+                result[product] = self.handleBaguettes(state, product, currentProductAmount)
+                pass
+
+            if product == 'DIP':
+                result[product] = self.handleDip(state, product, currentProductAmount)
+                pass
+
+            if product == 'UKULELE':
+                result[product] = self.handleUkulele(state, product, currentProductAmount)
                 pass
 
         return result
@@ -292,27 +330,10 @@ class Trader:
         orders: list[Order] = []
         order_depth = state.order_depths[product]        
         priceAverage: float = Trader.computeSimpleAverage(self, self.shortMovingAverages[product])
-        priceLongAverage: float = Trader.computeSimpleAverage(self, self.longMovingAverages[product])
         
-        if (priceAverage == -1 or priceLongAverage == -1 or len(self.longMovingAverages[product]) < self.longMovingAverageSize):
+        if (priceAverage == -1 or len(self.shortMovingAverages[product]) < self.shortMovingAverageSize):
             print("Not enough data to calculate moving average for bananas, skipping")
             return orders    
-    
-        isShortAboveLong = priceAverage > priceLongAverage
-
-        if isShortAboveLong and not self.shortTermAboveLongTerm: # before it was below, now it's above
-            # this is known as the golden cross, and it's a good time to buy
-            print("GOLDEN CROSS AT TIME ", state.timestamp, "PRODUCT ", product, " HAS POSITION: ", currentProductAmount)
-            self.tryToBuy = True
-            self.daysSinceCross = 0
-        elif not isShortAboveLong and self.shortTermAboveLongTerm: # before it was above, now it's below
-            # this is known as the dead cross, and it's a good time to sell
-            print("DEAD CROSS AT TIME ", state.timestamp, "PRODUCT ", product, " HAS POSITION: ", currentProductAmount)
-            self.tryToBuy = False
-            self.daysSinceCross = 0
-
-        self.shortTermAboveLongTerm = isShortAboveLong
-        self.daysSinceCross += 1
 
         recentStandardDeviation: float = 0
         for observation in self.shortMovingAverages[product]:
@@ -320,7 +341,7 @@ class Trader:
 
         recentStandardDeviation = (recentStandardDeviation / len(self.shortMovingAverages[product])) ** 0.5
 
-        self.writeLog(state, product, priceAverage, priceLongAverage, recentStandardDeviation)
+        self.writeLog(state, product, priceAverage, recentStandardDeviation)
 
         if len(order_depth.sell_orders) > 0: # we are going to consider buying
             print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
@@ -356,23 +377,33 @@ class Trader:
         if len(self.ultraLongVelocities["COCONUTS"]) > 0:
             versusVel = self.ultraLongVelocities["COCONUTS"][-1]
         
-        base = clamp(1 + versusVel / 100, 0.99, 1.01)
+        base = clamp(1 + versusVel / 100, 0.99, 1.01)   
 
-        desperation = min(2, abs(base - ratio) * 100)
+        desperation = min(2, abs(base - ratio) * 1000)
 
-        self.writeLog(state, product, normalizedPrice, normalizedCoconutPrice, ratio, base + self.minPinaColadaRatioDifference, base - self.minPinaColadaRatioDifference, desperation)
+        # calculate standard deviation of ultra long coconut moving average
+        priceAverage: float = Trader.computeSimpleAverage(self, self.ultraLongMovingAverages["COCONUTS"])
+        recentStandardDeviation: float = 0
+        for observation in self.ultraLongMovingAverages["COCONUTS"]:
+            recentStandardDeviation += (observation - priceAverage) ** 2
 
-        if abs(ratio - base) < self.minPinaColadaRatioDifference:
+        recentStandardDeviation = (recentStandardDeviation / len(self.ultraLongMovingAverages["COCONUTS"])) ** 0.5
+        
+        threshold = self.minPinaColadaRatioDifference
+
+        self.writeLog(state, product, normalizedPrice, normalizedCoconutPrice, ratio, base + threshold, base - threshold, desperation)
+
+        if abs(ratio - base) < threshold:
             print("Ratio is: ", ratio, " which is within the threshold of ", self.minPinaColadaRatioDifference, " at time ", state.timestamp, " so not trading")
             return orders
 
-        if ratio > base + self.minPinaColadaRatioDifference:
+        if ratio > base + threshold:
             # sell pina coladas, matching all open buy orders greater than the effective price - 1
-            orders = orders + self.getAllOrdersBetterThan(product, state, False, effectivePrice - 1 - desperation, currentProductAmount)
-        if ratio < base - self.minPinaColadaRatioDifference:
+            orders = orders + self.getAllOrdersBetterThan(product, state, False, effectivePrice - desperation, currentProductAmount)
+        if ratio < base - threshold:
             # buy pina coladas, matching all open sell orders less than the effective price + 1
             # ratio under 1, so multiply price by (2-ratio) to increase price as ratio decreases
-            orders = orders + self.getAllOrdersBetterThan(product, state, True, effectivePrice + 1 + desperation, currentProductAmount)
+            orders = orders + self.getAllOrdersBetterThan(product, state, True, effectivePrice + desperation, currentProductAmount)
         
         return orders
 
@@ -380,8 +411,153 @@ class Trader:
         orders = self.getAllOrdersBetterThan(product, state, True, 7910, currentProductAmount)
         orders = orders + self.getAllOrdersBetterThan(product, state, False, 7950, currentProductAmount)
         self.writeLog(state, product)
-        return orders
 
+        upper_limit = 8000
+        lower_limit = 7800
+
+        # backup
+        closeOrders = [] 
+        if currentProductAmount > 0:
+            closeOrders = self.getAllOrdersBetterThan(product, state, False, lower_limit, currentProductAmount)
+        else:
+            closeOrders = self.getAllOrdersBetterThan(product, state, True, upper_limit, currentProductAmount)
+
+        return orders if self.getMidpointPrice(state.order_depths[product]) < upper_limit and self.getMidpointPrice(state.order_depths[product]) > lower_limit else closeOrders
+
+    def handlePicnicBaskets(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
+        orders = self.getAllOrdersBetterThan(product, state, True, 73790, currentProductAmount)
+        orders = orders + self.getAllOrdersBetterThan(product, state, False, 74210, currentProductAmount)
+        self.writeLog(state, product)
+
+        upper_limit = 74420
+        lower_limit = 73560
+
+        # backup
+        closeOrders = [] 
+        if currentProductAmount > 0:
+            closeOrders = self.getAllOrdersBetterThan(product, state, False, lower_limit, currentProductAmount)
+        else:
+            closeOrders = self.getAllOrdersBetterThan(product, state, True, upper_limit, currentProductAmount)
+
+        return orders if self.getMidpointPrice(state.order_depths[product]) < upper_limit and self.getMidpointPrice(state.order_depths[product]) > lower_limit else closeOrders
+
+    def handleBaguettes(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
+        orders = self.getAllOrdersBetterThan(product, state, True, 12164, currentProductAmount)
+        orders = orders + self.getAllOrdersBetterThan(product, state, False, 12407, currentProductAmount)
+        self.writeLog(state, product)
+
+        upper_limit = 12467
+        lower_limit = 12104
+
+        # backup
+        closeOrders = [] 
+        if currentProductAmount > 0:
+            closeOrders = self.getAllOrdersBetterThan(product, state, False, lower_limit, currentProductAmount)
+        else:
+            closeOrders = self.getAllOrdersBetterThan(product, state, True, upper_limit, currentProductAmount)
+
+        return orders if self.getMidpointPrice(state.order_depths[product]) < upper_limit and self.getMidpointPrice(state.order_depths[product]) > lower_limit else closeOrders
+
+    def handleDip(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
+        orders = self.getAllOrdersBetterThan(product, state, True, 7069, currentProductAmount)
+        orders = orders + self.getAllOrdersBetterThan(product, state, False, 7110, currentProductAmount)
+        self.writeLog(state, product)
+
+        upper_limit = 7140
+        lower_limit = 7039
+
+        # backup
+        closeOrders = [] 
+        if currentProductAmount > 0:
+            closeOrders = self.getAllOrdersBetterThan(product, state, False, lower_limit, currentProductAmount)
+        else:
+            closeOrders = self.getAllOrdersBetterThan(product, state, True, upper_limit, currentProductAmount)
+
+        return orders if self.getMidpointPrice(state.order_depths[product]) < upper_limit and self.getMidpointPrice(state.order_depths[product]) > lower_limit else closeOrders
+
+    def handleUkulele(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
+        # unfortunately, we cannot use hard coded values for the ukulele, as the price is not stable
+
+        if self.ukuleleLastTradePrice < 500:
+            self.ukuleleLastTradePrice = self.getMidpointPrice(state.order_depths[product])
+
+
+        orders: list[Order] = []
+        order_depth = state.order_depths[product]        
+        priceAverage: float = Trader.computeSimpleAverage(self, self.shortMovingAverages[product])
+        
+        if (priceAverage == -1 or len(self.shortMovingAverages[product]) < self.shortMovingAverageSize):
+            print("Not enough data to calculate moving average for ukeleles, skipping")
+            return orders    
+
+        recentStandardDeviation: float = 0
+        for observation in self.shortMovingAverages[product]:
+            recentStandardDeviation += (observation - priceAverage) ** 2
+
+        recentStandardDeviation = (recentStandardDeviation / len(self.shortMovingAverages[product])) ** 0.5
+
+        recentStandardDeviationLong: float = 0 # for the long moving average
+        for observation in self.longMovingAverages[product]:
+            recentStandardDeviationLong += (observation - priceAverage) ** 2
+
+        recentStandardDeviationLong = (recentStandardDeviationLong / len(self.longMovingAverages[product])) ** 0.5
+
+        recentStandardDeviationUltraLong: float = 0 # for the ultra long moving average
+        for observation in self.ultraLongMovingAverages[product]:
+            recentStandardDeviationUltraLong += (observation - priceAverage) ** 2
+
+        recentStandardDeviationUltraLong = (recentStandardDeviationUltraLong / len(self.ultraLongMovingAverages[product])) ** 0.5
+
+        num_short_stddevs = (self.getMidpointPrice(order_depth) - priceAverage) / recentStandardDeviation
+        num_long_stddevs = (self.getMidpointPrice(order_depth) - priceAverage) / recentStandardDeviationLong
+        num_ultra_long_stddevs = (self.getMidpointPrice(order_depth) - priceAverage) / recentStandardDeviationUltraLong
+
+        diff_short_long = self.longMovingAverages[product][-1] - self.shortMovingAverages[product][-1]
+        diff_long_ultra_long = self.ultraLongMovingAverages[product][-1] - self.longMovingAverages[product][-1]
+
+        ultraLongTrend = getRawTrend(self.ultraLongMovingAverages[product], self.ultraLongMovingAverageSize - 1, 1)
+
+        self.writeLog(state, product, num_short_stddevs, num_long_stddevs, num_ultra_long_stddevs, diff_short_long, diff_long_ultra_long, ultraLongTrend)
+
+        if state.timestamp > 990000 and currentProductAmount == 0:
+            return orders # we don't want to trade at the end of the game
+
+        if diff_long_ultra_long > 25 and diff_short_long > 9:
+            self.ukuleleLastTradeTimestamp = state.timestamp
+            self.ukuleleLastTradeIsBuy = False
+            self.ukuleleLastTradePrice = self.getMidpointPrice(order_depth)
+            # if UL is far higher than L, sell
+            orders = self.getAllOrdersBetterThan(product, state, False, self.getMidpointPrice(order_depth) - 0.025 * diff_long_ultra_long, currentProductAmount)
+        elif diff_long_ultra_long < -25 and diff_short_long < -9:
+            self.ukuleleLastTradeTimestamp = state.timestamp
+            self.ukuleleLastTradeIsBuy = True
+            self.ukuleleLastTradePrice = self.getMidpointPrice(order_depth)
+            # if UL is far lower than L, buy
+            orders = self.getAllOrdersBetterThan(product, state, True, self.getMidpointPrice(order_depth) - 0.025 * diff_long_ultra_long, currentProductAmount)
+        
+        if currentProductAmount != 0:
+            if currentProductAmount > 0 and ultraLongTrend < 0:
+                # sell to close if we have a long position and the trend is going down
+                orders = orders + self.getAllOrdersBetterThan(product, state, False, self.getMidpointPrice(order_depth) + 20 - 1 * diff_long_ultra_long - 0.5 * diff_short_long, currentProductAmount, alt_max=0)
+            elif currentProductAmount < 0 and ultraLongTrend > 0:
+                # buy to close if we have a short position and the trend is going up
+                orders = orders + self.getAllOrdersBetterThan(product, state, True, self.getMidpointPrice(order_depth) - 20 - 1 * diff_long_ultra_long - 0.5 * diff_short_long, currentProductAmount, alt_max=0)
+            
+        if self.ukuleleLastTradeTimestamp > 0:
+            closeOrders = []
+            if self.ukuleleLastTradeIsBuy and ultraLongTrend < 0.001:
+                closeOrders = self.getAllOrdersBetterThan(product, state, False, self.ukuleleLastTradePrice + 110, currentProductAmount, alt_max=0)
+            elif ultraLongTrend > -0.001:
+                closeOrders = self.getAllOrdersBetterThan(product, state, True, self.ukuleleLastTradePrice - 110, currentProductAmount, alt_max=0)
+
+            if len(closeOrders) > 0:
+                self.ukuleleLastTradeTimestamp = 0
+                self.ukuleleLastTradeIsBuy = False
+                self.ukuleleLastTradePrice = 0
+                orders = closeOrders
+
+        return orders
+    
 
 
     def handleCoconutsOLD(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
@@ -440,8 +616,6 @@ class Trader:
         order_depth = state.order_depths[product]        
         priceAverage: float = Trader.computeSimpleAverage(self, self.shortMovingAverages[product])
         priceLongAverage: float = Trader.computeSimpleAverage(self, self.longMovingAverages[product])
-        self.writeLog(state, product)
-
 
         if (priceAverage == -1 or priceLongAverage == -1 or len(self.longMovingAverages[product]) < self.longMovingAverageSize):
             print("Not enough data to calculate moving average for berries, skipping")
@@ -516,7 +690,6 @@ class Trader:
 
             orders = orders + self.getAllOrdersBetterThan(product, state, False, acceptable_sell_price, currentProductAmount)
         return orders
-
 
     def handleDivingGear(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
         if len(self.shortMovingAverages[product]) < self.shortMovingAverageSize:

@@ -1,4 +1,5 @@
 # pip install matplotlib
+import sys
 import matplotlib.pyplot as plt
 import re # for regex
 
@@ -6,25 +7,29 @@ import re # for regex
 filename = "output.txt"
 
 from_sim = True
-simulate = from_sim # can also change to True or False to simulate or not
-sim_day = -1
+simulate = True # can also change to True or False to simulate or not
+sim_day = 3
 
 if from_sim:
     filename = 'simresults.txt'
-    if simulate:
+    if simulate:  
         import backtester
         backtester.run_simulation(sim_day)
 
-plotCombo = 0
+# set stdout back to normal (console)
+sys.stdout = sys.__stdout__
+
+plotCombo = 2
 
 if plotCombo == 0:
     plot_products = ["PINA_COLADAS", "COCONUTS"]
 elif plotCombo == 1:
     plot_products = ["DIVING_GEAR", "DOLPHIN_SIGHTINGS", "COCONUTS"]
 else:
-    plot_products = ["PINA_COLADAS", "COCONUTS", "BERRIES","DIVING_GEAR", "BANANAS", "DOLPHIN_SIGHTINGS"]
+    #plot_products = ["PICNIC_BASKET", "UKULELE", "DIP", "BAGUETTE"]
+    plot_products = ["UKULELE"]
 
-plot_bid_and_ask = False
+plot_bid_and_ask = True
 plot_price = True
 plot_pnl = True
 plot_position = True
@@ -32,7 +37,7 @@ plot_position = True
 plot_zero_vel = False
 plot_zero_acc = False
 plot_zero_pnl = False
-plot_const_customs = []
+plot_const_customs = [0.0003]
 
 mirror_const_customs = True # if true, will plot the negative of each const custom
 
@@ -48,6 +53,10 @@ customs_to_plot = {
 
     "DOLPHIN_SIGHTINGS": ["trend*", "*Ma", "*Days"],
     "DIVING_GEAR": [ "longMa", "sellPrice", "buyPrice",  "ultraLongMa", "ultra*Trend","ultra*Vel", "longVel"],
+    "DIP": [],
+    "BAGUETTE": [],
+    "UKULELE": ["*Ma", "*Trend", ],
+    "PICNIC_BASKET": []
 }
 # END CONFIGURABLES -----------------------------
 
@@ -66,7 +75,7 @@ asks: dict[str, list[float]] = {}
 positions: dict[str, list[float]] = {}
 customs: dict[str, list[list[float]]] = {}
 pnls: dict[str, list[float]] = {}
-products = ["PEARLS", "BANANAS", "PINA_COLADAS", "COCONUTS", "BERRIES", "DOLPHIN_SIGHTINGS", "DIVING_GEAR"]
+products = ['PEARLS', 'BANANAS', 'COCONUTS', 'PINA_COLADAS', 'DIVING_GEAR', 'BERRIES', 'DOLPHIN_SIGHTINGS', 'BAGUETTE', 'DIP', 'UKULELE', 'PICNIC_BASKET']
 
 common_customs = ["shortMa", "longMa", "ultraLongMa", "shortVel", "longVel", "ultraLongVel", "shortAcc", "longAcc", "ultraLongAcc",]
 
@@ -78,6 +87,10 @@ productToCustomSeries = {
     "BERRIES": common_customs + ["buyPrice", "sellPrice", "Diff"],
     "DOLPHIN_SIGHTINGS": common_customs + ["trend0", "trend1", "trend2", "dolphinDays", "gearDays", "prediction"],
     "DIVING_GEAR": common_customs + ["ultraLongTrend", "sellPrice", "buyPrice", "longTrend", "sd", "sdsAway"] ,
+    "DIP": common_customs,
+    "BAGUETTE": common_customs,
+    "UKULELE": common_customs + ["sdShort", "sdLong", "sdUL","S-L_trend","L-UL_trend","ultraLongTrend"],
+    "PICNIC_BASKET": common_customs
 }
 
 custom_colors = ["red", "green", "blue", "orange", "purple", "silver", "black", "pink", "brown",  "olive", "cyan", "magenta",  "coral", "navy", "maroon", "violet",   "khaki", "indigo", "darkgreen", "darkblue", "darkred", "darkorange", "darkgray", "darkcyan", "darkmagenta", "darkolivegreen", "darkkhaki", "darkgoldenrod", "darkviolet", "darkslategray", "darkslateblue", "darkseagreen", "darkorchid"]
@@ -91,11 +104,12 @@ for i in [timestamps, prices, bids, asks, positions, pnls]:
 
 for product in products:
     customs[product] = [
-        [] for i in range(len(productToCustomSeries[product]))
+        [] for i in range(len(productToCustomSeries[product]) if product in productToCustomSeries else 0)
     ]
 
 jsonMode = False
 
+print("Opening file: " + filename)
 with open(filename, "r") as f:        
     lines = f.readlines()
     if jsonMode:
@@ -107,10 +121,12 @@ with open(filename, "r") as f:
 
         if line[1] == ";":
             line = line.split(";")
-            timestamp = int(line[1])
             product = line[2]
             if product not in plot_products:
                 continue
+
+            timestamp = int(line[1] if line[1] != "" else timestamps[product][-1] + 100 if len(timestamps[product]) > 0 else 0)
+
             if jsonMode:
                 timestamps[product].append(timestamp)
                 prices[product].append(float(line[-2]))
@@ -122,7 +138,7 @@ with open(filename, "r") as f:
             continue
 
         line = line.split(",")
-        product = line[1].removeprefix('"').removesuffix('"')
+        product = line[1].removeprefix('"').removesuffix('"') if len(line) > 1 else "UNKNOWN"
         if product not in plot_products:
             continue
         timestamps[product].append(int(line[0].split(" ")[0]))
@@ -143,6 +159,7 @@ with open(filename, "r") as f:
 
 for product in products:
     if len(timestamps[product]) != len(pnls[product]):
+        print("Different lengths for timestamps and pnls for product " + product + ": " + str(len(timestamps[product])) + " vs " + str(len(pnls[product])) + ". Fixing...")
         modified = 0
         while len(timestamps[product]) > len(pnls[product]):
             pnls[product].append(0)
@@ -168,6 +185,10 @@ def isCustomExcluded(product, seriesLabel):
 # END UTILITY FUNCTIONS
 # number of plots is number of products where timestamps are not empty
 num_plots = len([i for i in timestamps if len(timestamps[i]) > 0])
+
+if num_plots == 0:
+    print("No data to plot regarding products " + str(plot_products))
+    exit()
 
 fig, axsRes = plt.subplots(num_plots, 1, figsize=(10, 10), squeeze=False, sharex=True)
 
