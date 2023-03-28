@@ -185,6 +185,7 @@ def simulate_alternative(round: int, day: int, trader, time_limit=999900, halfwa
     credit_by_symbol: dict[int, dict[str, float]] = { 0: copy.deepcopy(profits_by_symbol[0]) }
     unrealized_by_symbol: dict[int, dict[str, float]] = { 0: copy.deepcopy(profits_by_symbol[0]) }
     for time, state in states.items():
+
         position = copy.deepcopy(state.position)
         orders = trader.run(state)
         trades = clear_order_book(orders, state.order_depths, time, halfway)
@@ -433,7 +434,7 @@ def run_simulation(day = 1):
     #liqudation = bool(input("Should all positions be liquidated in the final run (sth. not blank for True): ")) or False
 
     max_time = 1000000
-    round = 4
+    round = 3
     halfway = True
     liqudation = True
 

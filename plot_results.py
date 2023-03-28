@@ -7,7 +7,7 @@ filename = "output.txt"
 
 from_sim = True
 simulate = from_sim # can also change to True or False to simulate or not
-sim_day = 3
+sim_day = -1
 
 if from_sim:
     filename = 'simresults.txt'
@@ -15,12 +15,12 @@ if from_sim:
         import backtester
         backtester.run_simulation(sim_day)
 
-plotCombo = 1
+plotCombo = 0
 
 if plotCombo == 0:
     plot_products = ["PINA_COLADAS", "COCONUTS"]
 elif plotCombo == 1:
-    plot_products = ["DIVING_GEAR", "DOLPHIN_SIGHTINGS"]
+    plot_products = ["DIVING_GEAR", "DOLPHIN_SIGHTINGS", "COCONUTS"]
 else:
     plot_products = ["PINA_COLADAS", "COCONUTS", "BERRIES","DIVING_GEAR", "BANANAS", "DOLPHIN_SIGHTINGS"]
 
@@ -32,7 +32,7 @@ plot_position = True
 plot_zero_vel = False
 plot_zero_acc = False
 plot_zero_pnl = False
-plot_const_customs = [0.00025]
+plot_const_customs = []
 
 mirror_const_customs = True # if true, will plot the negative of each const custom
 
@@ -42,7 +42,7 @@ customs_to_plot = {
     "BANANAS": ["shortMa", "ultraLongMa", "longMa"],
 
     "PINA_COLADAS": ["Ratio", "+t", "-t", "*NPrice"],
-    "COCONUTS": ["ultraLongMa", ],    
+    "COCONUTS": ["*Ma", "*Price", "Diff", "*Trend", "ultraLongVel"],    
 
     "BERRIES": ["ultraLongMa"],
 
@@ -74,7 +74,7 @@ productToCustomSeries = {
     "PEARLS": common_customs + ["CUSTOM1", "CUSTOM2", "CUSTOM3", "CUSTOM4", "CUSTOM5"],
     "BANANAS": common_customs + ["buyPrice", "sellPrice"],
     "PINA_COLADAS": common_customs + ["PC NPrice", "Coconut NPrice", "Ratio", "+t", "-t", "versusAcc"],
-    "COCONUTS": common_customs + ["buyPrice", "sellPrice", "Diff", "sigDiff"],
+    "COCONUTS": common_customs + ["buyPrice", "sellPrice", "Diff", "sd", "ultraLongTrend"],
     "BERRIES": common_customs + ["buyPrice", "sellPrice", "Diff"],
     "DOLPHIN_SIGHTINGS": common_customs + ["trend0", "trend1", "trend2", "dolphinDays", "gearDays", "prediction"],
     "DIVING_GEAR": common_customs + ["ultraLongTrend", "sellPrice", "buyPrice", "longTrend", "sd", "sdsAway"] ,
@@ -101,7 +101,7 @@ with open(filename, "r") as f:
     if jsonMode:
         lines = lines[8].split('": "')[1].split("\\n")
     for line in lines:
-        if len(line) < 2 or (line[1] != ";" and (not "CSVDATA" in line or "TIMESTAMP" in line)): # skip header and all lines without CSVDATA, but don't skip lines with ; in them
+        if len(line) < 2 or (line[1] != ";" and line[2] != ';' and (not "CSVDATA" in line or "TIMESTAMP" in line)): # skip header and all lines without CSVDATA, but don't skip lines with ; in them
             continue
         line = line.strip()
 
@@ -116,7 +116,9 @@ with open(filename, "r") as f:
                 prices[product].append(float(line[-2]))
             if timestamp in timestamps[product]:
                 pnls[product].append(float(line[-1]))
-
+            else:
+                print("Unknown timestamp: " + str(timestamp) + " for product " + product + " in line " + str.join(";", line))
+                pnls[product].append(0)
             continue
 
         line = line.split(",")
@@ -139,6 +141,16 @@ with open(filename, "r") as f:
             else:
                 customs[product][i-6].append(float(line[i]))
 
+for product in products:
+    if len(timestamps[product]) != len(pnls[product]):
+        modified = 0
+        while len(timestamps[product]) > len(pnls[product]):
+            pnls[product].append(0)
+            modified += 1
+        while len(timestamps[product]) < len(pnls[product]):
+            pnls[product].pop(0)
+            modified += 1
+        print("Modified " + str(modified) + " PnLs for product " + product)
 
 # UTILITY FUNCTIONS
 def make_patch_spines_invisible(ax):
