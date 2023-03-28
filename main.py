@@ -211,7 +211,7 @@ class Trader:
                 pass
             
             if product == "BANANAS":
-                result[product] = self.handleBananasOLD(state, product, currentProductAmount)
+                result[product] = self.handleBananas(state, product, currentProductAmount)
                 
             if product == 'PEARLS':
                 result[product] = self.handlePearls(state, product, currentProductAmount)
@@ -288,45 +288,51 @@ class Trader:
         # print("Pushed Pearl Market to", BestBuy, "-", BestSell)
         return orders
     
-    def handleBananas(self, state:TradingState, product: str, currentProductAmount: int) -> list[Order]: 
-        if len(self.shortMovingAverages[product]) < self.shortMovingAverageSize:
-            return []
-        
-        order_depth = state.order_depths[product]
-        shortVel = self.shortVelocities[product][-1]
-
-        midpointPrice = self.getMidpointPrice(order_depth)
+    def handleBananas(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
         orders: list[Order] = []
+        order_depth = state.order_depths[product]        
+        priceAverage: float = Trader.computeSimpleAverage(self, self.shortMovingAverages[product])
+        priceLongAverage: float = Trader.computeSimpleAverage(self, self.longMovingAverages[product])
+        
+        if (priceAverage == -1 or priceLongAverage == -1 or len(self.longMovingAverages[product]) < self.longMovingAverageSize):
+            print("Not enough data to calculate moving average for bananas, skipping")
+            return orders    
+    
+        isShortAboveLong = priceAverage > priceLongAverage
 
-        priceAverage: float = self.shortMovingAverages[product][-1]
-                
+        if isShortAboveLong and not self.shortTermAboveLongTerm: # before it was below, now it's above
+            # this is known as the golden cross, and it's a good time to buy
+            print("GOLDEN CROSS AT TIME ", state.timestamp, "PRODUCT ", product, " HAS POSITION: ", currentProductAmount)
+            self.tryToBuy = True
+            self.daysSinceCross = 0
+        elif not isShortAboveLong and self.shortTermAboveLongTerm: # before it was above, now it's below
+            # this is known as the dead cross, and it's a good time to sell
+            print("DEAD CROSS AT TIME ", state.timestamp, "PRODUCT ", product, " HAS POSITION: ", currentProductAmount)
+            self.tryToBuy = False
+            self.daysSinceCross = 0
+
+        self.shortTermAboveLongTerm = isShortAboveLong
+        self.daysSinceCross += 1
+
         recentStandardDeviation: float = 0
         for observation in self.shortMovingAverages[product]:
             recentStandardDeviation += (observation - priceAverage) ** 2
 
         recentStandardDeviation = (recentStandardDeviation / len(self.shortMovingAverages[product])) ** 0.5
 
+        self.writeLog(state, product, priceAverage, priceLongAverage, recentStandardDeviation)
 
-        if len(self.shortVelocities[product]) < self.shortMovingAverageSize / 2:
-            return orders
+        if len(order_depth.sell_orders) > 0: # we are going to consider buying
+            print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS SELL ORDERS: ", state.order_depths[product].sell_orders)
+            acceptable_buy_price = priceAverage - recentStandardDeviation * self.stddevThreshold
 
-        
-        shortMa = self.shortMovingAverages[product][-1]
-        longMa = self.longMovingAverages[product][-1]
-        ultraLongMa = self.ultraLongMovingAverages[product][-1]
-
-        acceptable_buy_price = weightedAverage(priceAverage, midpointPrice, sigmoid(abs(2 * shortVel))) + abs(priceAverage - ultraLongMa) + 2 * abs(shortVel - 0.1)
-        acceptable_sell_price = weightedAverage(priceAverage, midpointPrice, sigmoid(abs(2 * shortVel))) - abs(priceAverage - ultraLongMa) - 2 * abs(shortVel + 0.1)
-
-        self.writeLog(state, product, acceptable_buy_price, acceptable_sell_price, getDiff(longMa, ultraLongMa))
-        
-
-        if len(order_depth.sell_orders) > 0 and midpointPrice > longMa and shortMa > longMa and (shortVel > 0.04 or significantDiff(longMa, ultraLongMa, 0.0002)):
             orders = orders + self.getAllOrdersBetterThan(product, state, True, acceptable_buy_price, currentProductAmount)
 
-        if len(order_depth.buy_orders) > 0 and midpointPrice < longMa and shortMa < longMa and (shortVel < -0.04 or significantDiff(longMa, ultraLongMa, 0.0002)):
+        if len(order_depth.buy_orders) > 0: # we are going to consider selling
+            print("AT TIME ", state.timestamp, "PRODUCT ", product, " HAS BUY ORDERS: ", state.order_depths[product].buy_orders)
+            acceptable_sell_price = priceAverage + recentStandardDeviation * self.stddevThreshold
+
             orders = orders + self.getAllOrdersBetterThan(product, state, False, acceptable_sell_price, currentProductAmount)
-        
         return orders
 
     def handlePinaColadas(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
