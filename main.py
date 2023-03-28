@@ -120,13 +120,16 @@ class Trader:
     coconutsCrossedUp: bool = False
     coconutsDaysSinceCross: int = 0
 
-    dolphinTrendTimestamp: int = -100
-    dolphinTrend: int = 0 # 0 = no trend, 1 = up, -1 = down
+    divingGearTrendTimestamp: int = -100
+    predictedDivingGearTrend: int = 0 # 0 = no trend, 1 = up, -1 = down
     dolphinTrendDays: int = 0
+    divingGearTrendDays: int = 0
 
     daysTryingToEndDivingGear: int = 0
 
     done_initializing: bool = False # we use this to detect state resets
+
+    FullBuy = Hold = FullSell = False
 
     # CONFIGURABLE PARAMETERS
     shortMovingAverageSize: int = 10
@@ -138,6 +141,7 @@ class Trader:
     pearl_acceptable_price = 10000
     # ignored for now
     bananasQuantityAffinity: int = 2
+
 
 
     def __init__(self):
@@ -164,17 +168,20 @@ class Trader:
             print("OPERATING WITH SMASIZE ", self.shortMovingAverageSize, "LONGSMASIZE", self.longMovingAverageSize, "ULTRALONGSMASIZE", self.ultraLongMovingAverageSize)
             self.done_initializing = True
 
-        if self.getEffectivePrice(state.order_depths['PINA_COLADAS']) != -1 and self.basePinaColadaPrice == 0:
-            self.basePinaColadaPrice = self.getEffectivePrice(state.order_depths['PINA_COLADAS'])
+        if self.getMidpointPrice(state.order_depths['PINA_COLADAS']) != -1 and self.basePinaColadaPrice == 0:
+            self.basePinaColadaPrice = self.getMidpointPrice(state.order_depths['PINA_COLADAS'])
 
-        if self.getEffectivePrice(state.order_depths['COCONUTS']) != -1 and self.baseCoconutPrice == 0:
-            self.baseCoconutPrice = self.getEffectivePrice(state.order_depths['COCONUTS'])
+        if self.getMidpointPrice(state.order_depths['COCONUTS']) != -1 and self.baseCoconutPrice == 0:
+            self.baseCoconutPrice = self.getMidpointPrice(state.order_depths['COCONUTS'])
 
 
         # Initialize the method output dict as an empty dict
         result = {}
 
         for product in state.observations:
+            if product not in self.trackingStatsOf:
+                continue
+
             self.processMovingAverage(product, self.shortMovingAverageSize, state.observations[product], False)
             self.processMovingAverage(product, self.longMovingAverageSize, state.observations[product], False)
             self.processMovingAverage(product, self.ultraLongMovingAverageSize, state.observations[product], False)
@@ -184,15 +191,16 @@ class Trader:
 
         # Process the moving averages first
         for product in state.order_depths.keys():
-            if product in state.observations:
+            if product in state.observations or product not in self.trackingStatsOf:
                 continue
-            effectivePrice = self.getEffectivePrice(state.order_depths[product])
-            self.processMovingAverage(product, self.shortMovingAverageSize, effectivePrice, False)
-            self.processMovingAverage(product, self.longMovingAverageSize, effectivePrice, False)
-            self.processMovingAverage(product, self.ultraLongMovingAverageSize, effectivePrice, False)
+            midpointPrice = self.getMidpointPrice(state.order_depths[product])
+            self.processMovingAverage(product, self.shortMovingAverageSize, midpointPrice, False)
+            self.processMovingAverage(product, self.longMovingAverageSize, midpointPrice, False)
+            self.processMovingAverage(product, self.ultraLongMovingAverageSize, midpointPrice, False)
         # Handle buying and selling of each product
         for product in state.order_depths.keys():
-
+            if product not in self.trackingStatsOf:
+                continue
             currentProductAmount = 0            
             try:
                 currentProductAmount = state.position[product]
@@ -284,7 +292,7 @@ class Trader:
         order_depth = state.order_depths[product]
         shortVel = self.shortVelocities[product][-1]
 
-        effectivePrice = self.getEffectivePrice(order_depth)
+        midpointPrice = self.getMidpointPrice(order_depth)
         orders: list[Order] = []
 
         priceAverage: float = self.shortMovingAverages[product][-1]
@@ -304,16 +312,16 @@ class Trader:
         longMa = self.longMovingAverages[product][-1]
         ultraLongMa = self.ultraLongMovingAverages[product][-1]
 
-        acceptable_buy_price = weightedAverage(priceAverage, effectivePrice, sigmoid(abs(2 * shortVel))) + abs(priceAverage - ultraLongMa) + 2 * abs(shortVel - 0.1)
-        acceptable_sell_price = weightedAverage(priceAverage, effectivePrice, sigmoid(abs(2 * shortVel))) - abs(priceAverage - ultraLongMa) - 2 * abs(shortVel + 0.1)
+        acceptable_buy_price = weightedAverage(priceAverage, midpointPrice, sigmoid(abs(2 * shortVel))) + abs(priceAverage - ultraLongMa) + 2 * abs(shortVel - 0.1)
+        acceptable_sell_price = weightedAverage(priceAverage, midpointPrice, sigmoid(abs(2 * shortVel))) - abs(priceAverage - ultraLongMa) - 2 * abs(shortVel + 0.1)
 
         self.writeLog(state, product, acceptable_buy_price, acceptable_sell_price, getDiff(longMa, ultraLongMa))
         
 
-        if len(order_depth.sell_orders) > 0 and effectivePrice > longMa and shortMa > longMa and (shortVel > 0.04 or significantDiff(longMa, ultraLongMa, 0.0002)):
+        if len(order_depth.sell_orders) > 0 and midpointPrice > longMa and shortMa > longMa and (shortVel > 0.04 or significantDiff(longMa, ultraLongMa, 0.0002)):
             orders = orders + self.getAllOrdersBetterThan(product, state, True, acceptable_buy_price, currentProductAmount)
 
-        if len(order_depth.buy_orders) > 0 and effectivePrice < longMa and shortMa < longMa and (shortVel < -0.04 or significantDiff(longMa, ultraLongMa, 0.0002)):
+        if len(order_depth.buy_orders) > 0 and midpointPrice < longMa and shortMa < longMa and (shortVel < -0.04 or significantDiff(longMa, ultraLongMa, 0.0002)):
             orders = orders + self.getAllOrdersBetterThan(product, state, False, acceptable_sell_price, currentProductAmount)
         
         return orders
@@ -369,10 +377,10 @@ class Trader:
         
         order_depth = state.order_depths[product]
         #get effective price
-        effectivePrice = self.getEffectivePrice(order_depth)
+        midpointPrice = self.getMidpointPrice(order_depth)
         orders: list[Order] = []
 
-        if (effectivePrice == -1 or self.basePinaColadaPrice == 0 or self.baseCoconutPrice == 0):
+        if (midpointPrice == -1 or self.basePinaColadaPrice == 0 or self.baseCoconutPrice == 0):
             print("NOT READY TO TRADE PINA COLADAS AT TIME", state.timestamp)
             return orders
         
@@ -449,18 +457,18 @@ class Trader:
 
         if closeDirection != 0:
             if currentProductAmount > 0 and closeDirection == -1: # sell
-                orders = self.getAllOrdersBetterThan(product, state, False, effectivePrice - desperation - closeUrgency, currentProductAmount, alt_max=0)
+                orders = self.getAllOrdersBetterThan(product, state, False, midpointPrice - desperation - closeUrgency, currentProductAmount, alt_max=0)
             elif currentProductAmount < 0 and closeDirection == 1: # buy
-                orders = self.getAllOrdersBetterThan(product, state, True, effectivePrice + desperation + closeUrgency, currentProductAmount, alt_max=0)
+                orders = self.getAllOrdersBetterThan(product, state, True, midpointPrice + desperation + closeUrgency, currentProductAmount, alt_max=0)
             if len(orders) > 0:
                 return orders
 
         if ratio > base + self.minPinaColadaRatioDifference:
             # sell pina coladas
-            orders = self.getAllOrdersBetterThan(product, state, False, effectivePrice - desperation, currentProductAmount)
+            orders = self.getAllOrdersBetterThan(product, state, False, midpointPrice - desperation, currentProductAmount)
         if ratio < base - self.minPinaColadaRatioDifference:
             # buy pina coladas
-            orders = self.getAllOrdersBetterThan(product, state, True, effectivePrice + desperation, currentProductAmount)
+            orders = self.getAllOrdersBetterThan(product, state, True, midpointPrice + desperation, currentProductAmount)
         
         return orders
 
@@ -471,7 +479,7 @@ class Trader:
         order_depth = state.order_depths[product]
         shortVel = self.shortVelocities[product][-1]
 
-        effectivePrice = self.getEffectivePrice(order_depth)
+        midpointPrice = self.getMidpointPrice(order_depth)
         orders: list[Order] = []
 
         priceAverage: float = self.shortMovingAverages[product][-1]
@@ -490,8 +498,8 @@ class Trader:
         longMa = self.longMovingAverages[product][-1]
         ultraLongMa = self.ultraLongMovingAverages[product][-1]
 
-        acceptable_buy_price = weightedAverage(priceAverage, effectivePrice, sigmoid(abs(2 * shortVel))) + abs(priceAverage - ultraLongMa) + 0.2 * abs(shortVel - 0.8)
-        acceptable_sell_price = weightedAverage(priceAverage, effectivePrice, sigmoid(abs(2 * shortVel))) - abs(priceAverage - ultraLongMa) - 0.2 * abs(shortVel + 0.8)
+        acceptable_buy_price = weightedAverage(priceAverage, midpointPrice, sigmoid(abs(2 * shortVel))) + abs(priceAverage - ultraLongMa) + 0.2 * abs(shortVel - 0.8)
+        acceptable_sell_price = weightedAverage(priceAverage, midpointPrice, sigmoid(abs(2 * shortVel))) - abs(priceAverage - ultraLongMa) - 0.2 * abs(shortVel + 0.8)
 
         self.writeLog(state, product, acceptable_buy_price, acceptable_sell_price, getDiff(longMa, ultraLongMa))
         
@@ -505,7 +513,6 @@ class Trader:
         return orders
 
     def handleMayberries(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
-        if state.timestamp == 0: self.FullBuy = self.Hold = self.FullSell = False
         orders: list[Order] = []
         order_depth = state.order_depths[product]        
         priceAverage: float = Trader.computeSimpleAverage(self, self.shortMovingAverages[product])
@@ -595,10 +602,10 @@ class Trader:
         order_depth = state.order_depths[product]
         shortVel = self.shortVelocities[product][-1]
 
-        effectivePrice = self.getEffectivePrice(order_depth)
+        midpointPrice = self.getMidpointPrice(order_depth)
         orders: list[Order] = []
 
-        priceAverage: float = self.shortMovingAverages[product][-1]
+        smoothedPrice: float = self.shortMovingAverages[product][-1]
 
         if len(self.shortVelocities[product]) < self.shortMovingAverageSize / 2:
             return orders
@@ -607,58 +614,109 @@ class Trader:
         longMa = self.longMovingAverages[product][-1]
         ultraLongMa = self.ultraLongMovingAverages[product][-1]
         ultraLongVel = self.ultraLongVelocities[product][-1]
+        longVel = self.longVelocities[product][-1]
 
-        acceptable_buy_price = weightedAverage(priceAverage, effectivePrice, sigmoid(abs(3 * shortVel))) + 2 * abs(priceAverage - ultraLongMa) + 2 * abs(shortVel - 0.05) + 0.5
-        acceptable_sell_price = weightedAverage(priceAverage, effectivePrice, sigmoid(abs(3 * shortVel))) - 2 * abs(priceAverage - ultraLongMa) - 2 * abs(shortVel + 0.05) - 0.5
+        acceptable_buy_price = weightedAverage(smoothedPrice, midpointPrice, sigmoid(abs(3 * shortVel))) + 0.25 * abs(smoothedPrice - ultraLongMa) + 0.5 * abs(shortVel - 0.05) + 0.5 + 5 * self.predictedDivingGearTrend
+        acceptable_sell_price = weightedAverage(smoothedPrice, midpointPrice, sigmoid(abs(3 * shortVel))) - 0.25 * abs(smoothedPrice - ultraLongMa) - 0.5 * abs(shortVel + 0.05) - 0.5 - 5 * self.predictedDivingGearTrend
 
-        ultraLongTrend = getRawTrend(self.ultraLongMovingAverages[product], self.ultraLongMovingAverageSize)
-
-        self.writeLog(state, product, ultraLongTrend, diffDirectional(priceAverage, ultraLongMa), significantDiff(priceAverage, ultraLongMa, 0.0005))
-        
-        placedOrder = False
-
-        force_uptrend = (self.ultraLongVelocities[product][-1] > 0.5 and significantDiffDirectional(priceAverage, ultraLongMa, 0.0007)) or getTrend(self.ultraLongMovingAverages[product], self.ultraLongMovingAverageSize, 0.0007)
-        force_downtrend = (self.ultraLongVelocities[product][-1] < -0.5 and significantDiffDirectional(priceAverage, ultraLongMa, -0.0007)) or getTrend(self.ultraLongMovingAverages[product], self.ultraLongMovingAverageSize, -0.0007)
 
         # buying conditions
-        if (significantDiffDirectional(priceAverage, ultraLongMa, 0.0005) or ultraLongTrend == 1 or self.dolphinTrend == 1) and not force_downtrend and self.dolphinTrend != -1:
-            orders = orders + self.getAllOrdersBetterThan(product, state, True, acceptable_buy_price, currentProductAmount)
+        if self.predictedDivingGearTrend == 1 and longVel > 0.5:
+            orders = self.getAllOrdersBetterThan(product, state, True, acceptable_buy_price, currentProductAmount)
             placedOrder = True
 
         # selling conditions
-        if (significantDiffDirectional(priceAverage, ultraLongMa, -0.0005) or ultraLongTrend == -1 or self.dolphinTrend == -1) and not force_uptrend and self.dolphinTrend != 1:
-            orders = orders + self.getAllOrdersBetterThan(product, state, False, acceptable_sell_price, currentProductAmount)
+        if self.predictedDivingGearTrend == -1 and longVel < -0.5:
+            orders = self.getAllOrdersBetterThan(product, state, False, acceptable_sell_price, currentProductAmount)
             placedOrder = True
 
-        if (self.dolphinTrend == -1 and ultraLongVel > 0):
-            self.daysTryingToEndDivingGear += 1
-            if (ultraLongVel > 0.5):
-                self.daysTryingToEndDivingGear += 9
-        
-        if (self.dolphinTrend == 1 and ultraLongVel < 0):
-            self.daysTryingToEndDivingGear += 1
-            if (ultraLongVel < -0.5):
-                self.daysTryingToEndDivingGear += 9
 
-        if (self.dolphinTrend == 0):
+        if (self.predictedDivingGearTrend == -1 and ultraLongVel > 0) and (state.timestamp - self.divingGearTrendTimestamp) > 500:
+            self.daysTryingToEndDivingGear += 1
+            self.daysTryingToEndDivingGear += int(abs(removeNoise(ultraLongVel, 0.2))) * 13
+            self.daysTryingToEndDivingGear += int(abs(removeNoise(longVel, 0.5))) * 7
+
+            if (state.timestamp - self.divingGearTrendTimestamp) > 25000 and midpointPrice > ultraLongMa:
+                self.daysTryingToEndDivingGear += 5
+        
+        if (self.predictedDivingGearTrend == 1 and ultraLongVel < 0) and (state.timestamp - self.divingGearTrendTimestamp) > 500:
+            self.daysTryingToEndDivingGear += 1
+            self.daysTryingToEndDivingGear += int(abs(removeNoise(ultraLongVel, 0.2))) * 13
+            self.daysTryingToEndDivingGear += int(abs(removeNoise(longVel, 0.5))) * 7
+
+            if (state.timestamp - self.divingGearTrendTimestamp) > 25000 and midpointPrice < ultraLongMa:
+                self.daysTryingToEndDivingGear += 5
+
+
+
+        if (self.predictedDivingGearTrend == 0):
             self.daysTryingToEndDivingGear = 0
 
 
-        if (currentProductAmount > 0 and ((priceAverage > ultraLongMa and not placedOrder))) or (self.daysTryingToEndDivingGear > 50):
+        if currentProductAmount > 0 and self.daysTryingToEndDivingGear > 90:
             # try to close out position to secure profit (sell)
-            orders = orders + self.getAllOrdersBetterThan(product, state, False, acceptable_sell_price, currentProductAmount, alt_max=0)
-            if (self.dolphinTrend == 1 and ultraLongVel < 0):
-                self.dolphinTrend = 0 # we are done capitalizing on this trend
+            orders = self.getAllOrdersBetterThan(product, state, False, acceptable_sell_price, currentProductAmount, alt_max=0)
+            if (self.predictedDivingGearTrend == 1 and ultraLongVel < 0):
+                self.predictedDivingGearTrend = 0 # we are done capitalizing on this trend
                 self.dolphinTrendDays = 0
 
-        if (currentProductAmount < 0 and ((priceAverage < ultraLongMa and not placedOrder))) or (self.daysTryingToEndDivingGear > 50):
+        if currentProductAmount < 0 and self.daysTryingToEndDivingGear > 90:
             # try to close out position to secure profit (buy)
-            orders = orders + self.getAllOrdersBetterThan(product, state, True, acceptable_buy_price, currentProductAmount, alt_max=0)
-            if (self.dolphinTrend == -1 and ultraLongVel > 0):
-                self.dolphinTrend = 0 # we are done capitalizing on this trend
+            orders = self.getAllOrdersBetterThan(product, state, True, acceptable_buy_price, currentProductAmount, alt_max=0)
+            if (self.predictedDivingGearTrend == -1 and ultraLongVel > 0):
+                self.predictedDivingGearTrend = 0 # we are done capitalizing on this trend
                 self.dolphinTrendDays = 0
 
-        return orders
+
+        # code for volatility based trading
+        volatilityOrders: list[Order] = []
+        currentLMA: float = self.longMovingAverages[product][-1]
+        averageLMA: float = self.computeSimpleAverage(self.longMovingAverages[product])
+
+        recentStandardDeviation: float = 0
+        for observation in self.longMovingAverages[product]:
+            recentStandardDeviation += (observation - averageLMA) ** 2
+
+        recentStandardDeviation = ((recentStandardDeviation / len(self.longMovingAverages[product])) ** 0.5) + 2
+
+        standardDevsAway = (midpointPrice - currentLMA) / recentStandardDeviation
+
+        if len(self.longMovingAverages[product]) < self.longMovingAverageSize / 2:
+            standardDevsAway = 0 # we don't have enough data to make a decision
+
+        # purely for logging
+        ultraLongTrend = getRawTrend(self.longMovingAverages[product], self.ultraLongMovingAverageSize, div=2)
+        longTrend = getRawTrend(self.longMovingAverages[product], self.longMovingAverageSize)
+
+        ultraLongThreshold = 0.0003
+        sideways = getTrend(self.ultraLongMovingAverages[product], self.ultraLongMovingAverageSize, ultraLongThreshold / 2) == 0
+        lenientSideways = getTrend(self.ultraLongMovingAverages[product], self.ultraLongMovingAverageSize, ultraLongThreshold / 1.5) == 0
+
+        upper_price = currentLMA + recentStandardDeviation * self.stddevThreshold * 6
+        lower_price = currentLMA - recentStandardDeviation * self.stddevThreshold * 6
+
+        self.writeLog(state, product, ultraLongTrend, upper_price, lower_price, longTrend, recentStandardDeviation, standardDevsAway)
+
+        spike_up = midpointPrice > upper_price
+        spike_down = midpointPrice < lower_price
+
+        too_risky = abs(longVel) > 2 or abs(ultraLongVel) > 1
+
+        if spike_up and not too_risky:
+            # sell at upper price
+            volatilityOrders = self.getAllOrdersBetterThan(product, state, False, upper_price + 10, currentProductAmount)
+        if spike_down and not too_risky:
+            # buy at lower price
+            volatilityOrders = self.getAllOrdersBetterThan(product, state, True, lower_price - 10, currentProductAmount)
+
+        if (too_risky or midpointPrice > currentLMA) and currentProductAmount > 0:
+            # close at midpoint price - 2*stddev by selling
+            volatilityOrders = volatilityOrders + self.getAllOrdersBetterThan(product, state, False, midpointPrice - 0.5 * recentStandardDeviation, currentProductAmount, alt_max=0)
+        elif (too_risky or midpointPrice < currentLMA) and currentProductAmount < 0:
+            # close at midpoint price + 2*stddev by buying
+            volatilityOrders = volatilityOrders + self.getAllOrdersBetterThan(product, state, True, midpointPrice + 0.5 * recentStandardDeviation, currentProductAmount, alt_max=0)
+
+        return orders if (len(orders) != 0 or self.predictedDivingGearTrend != 0) else volatilityOrders
 
     def handleDolphinSightings(self, state: TradingState, product: str): # void
         amount = state.observations[product]
@@ -667,38 +725,113 @@ class Trader:
         rawTrend1 = getRawTrend(self.longMovingAverages[product], self.longMovingAverageSize)
         rawTrend2 = getRawTrend(self.ultraLongMovingAverages[product], self.ultraLongMovingAverageSize)
 
-        if rawTrend2 > 0.00055 and self.dolphinTrend == 0:
-            if self.dolphinTrendDays == 0:
-                self.dolphinTrendTimestamp = state.timestamp            
-            self.dolphinTrendDays += 1
-            if rawTrend2 > 0.0009:
-                self.dolphinTrendDays += 4
+        if (rawTrend2 > 0.0004 or rawTrend1 > 0.0003) and self.dolphinTrendDays < 1000:
 
-            if rawTrend1 > 0.0005:
-                self.dolphinTrendDays += 6
-
-            if self.dolphinTrendDays > 20:
-                self.dolphinTrend = 1
-
-        elif rawTrend2 < -0.00055 and self.dolphinTrend == 0:
-            if self.dolphinTrendDays == 0:
-                self.dolphinTrendTimestamp = state.timestamp            
+            self.divingGearTrendTimestamp = state.timestamp            
+            self.dolphinTrendDays += 2
             
-            self.dolphinTrendDays += 1
-            if rawTrend2 < -0.0009:
-                self.dolphinTrendDays += 4
+            if rawTrend2 > 0.0007:
+                self.dolphinTrendDays += 100
+            elif rawTrend2 > 0.00055:
+                self.dolphinTrendDays += 50
 
-            if rawTrend1 < -0.0005:
-                self.dolphinTrendDays += 6
+            if rawTrend1 > 0.0004:
+                self.dolphinTrendDays += 200
+            elif rawTrend1 > 0.00035:
+                self.dolphinTrendDays += 100
 
-            if self.dolphinTrendDays > 20:
-                self.dolphinTrend = -1
+            if self.dolphinTrendDays > 1000:
+                self.predictedDivingGearTrend = 1
+
+        elif (rawTrend2 < -0.0004 or rawTrend1 < -0.0003) and self.dolphinTrendDays < 1000:
+            if self.dolphinTrendDays == 0:
+                self.divingGearTrendTimestamp = state.timestamp            
+            
+            self.dolphinTrendDays += 2
+            if rawTrend2 < -0.0007:
+                self.dolphinTrendDays += 100
+            elif rawTrend2 < -0.00055:
+                self.dolphinTrendDays += 50
+
+            if rawTrend1 < -0.0004:
+                self.dolphinTrendDays += 200
+            elif rawTrend1 < -0.00035:
+                self.dolphinTrendDays += 100
+
+            if self.dolphinTrendDays > 1000:
+                self.predictedDivingGearTrend = -1
 
         else:
-            self.dolphinTrendDays = 0
+            self.dolphinTrendDays -= 75
+            self.dolphinTrendDays = max(0, self.dolphinTrendDays)
 
+        divingGearTrend0 = getRawTrend(self.shortMovingAverages["DIVING_GEAR"], self.shortMovingAverageSize, div=2)
+        divingGearTrend1 = getRawTrend(self.longMovingAverages["DIVING_GEAR"], self.longMovingAverageSize, div=2)
+        divingGearTrend2 = getRawTrend(self.ultraLongMovingAverages["DIVING_GEAR"], self.ultraLongMovingAverageSize, div=2)
 
-        self.writeLog(state, product, rawTrend0, rawTrend1, rawTrend2, possibleNewTrend, self.dolphinTrend, is_observation=True)
+        divingGearLongVel = self.longVelocities["DIVING_GEAR"][-1] if len(self.longVelocities["DIVING_GEAR"]) > 0 else 0
+        divingGearUltraLongVel = self.ultraLongVelocities["DIVING_GEAR"][-1] if len(self.ultraLongVelocities["DIVING_GEAR"]) > 0 else 0
+        # a strong diving gear trend has the same effect as a strong dolphin trend
+
+        if (divingGearTrend2 > 0.00025) and self.predictedDivingGearTrend == 0:
+            if self.divingGearTrendDays == 0:
+                self.divingGearTrendTimestamp = state.timestamp            
+            self.divingGearTrendDays += 3
+            
+            if divingGearTrend2 > 0.0006:
+                self.divingGearTrendDays += 100
+            elif divingGearTrend2 > 0.0004:
+                self.divingGearTrendDays += 50
+
+            if divingGearTrend1 > 0.0004:
+                self.divingGearTrendDays += 100
+            elif divingGearTrend1 > 0.00025:
+                self.divingGearTrendDays += 50
+
+            if divingGearLongVel > 1.5:
+                self.divingGearTrendDays += 50
+            
+            if divingGearUltraLongVel > 0.75:
+                self.divingGearTrendDays += 50
+
+            if self.divingGearTrendDays > 1000:
+                self.predictedDivingGearTrend = 1
+
+        elif (divingGearTrend2 < -0.00025) and self.predictedDivingGearTrend == 0:
+            if self.divingGearTrendDays == 0:
+                self.divingGearTrendTimestamp = state.timestamp            
+            
+            self.divingGearTrendDays += 3
+            if divingGearTrend2 < -0.0006:
+                self.divingGearTrendDays += 100
+            elif divingGearTrend2 < -0.0004:
+                self.divingGearTrendDays += 50
+
+            if divingGearTrend1 < -0.0004:
+                self.divingGearTrendDays += 100
+            elif divingGearTrend1 < -0.00025:
+                self.divingGearTrendDays += 59
+
+            if divingGearLongVel < -1.5:
+                self.divingGearTrendDays += 50
+            
+            if divingGearUltraLongVel < -0.75:
+                self.divingGearTrendDays += 50
+
+            if self.divingGearTrendDays > 1000:
+                self.predictedDivingGearTrend = -1
+
+        else:
+            self.divingGearTrendDays -= 75
+            self.divingGearTrendDays = max(0, self.divingGearTrendDays)
+
+        if self.dolphinTrendDays > 1000:
+            self.dolphinTrendDays = 1000
+
+        if self.divingGearTrendDays > 1000:
+            self.divingGearTrendDays = 1000
+
+        self.writeLog(state, product, rawTrend0, rawTrend1, rawTrend2, self.dolphinTrendDays, self.divingGearTrendDays, self.predictedDivingGearTrend / 2000, is_observation=True)
 
 
 # --------------------- END PRODUCT HANDLERS --------------------- #
@@ -784,7 +917,7 @@ class Trader:
     def getAllOrdersBetterThan(self, product: str, state: TradingState, isBuying: bool, price: float, currentProductAmount: int, alt_max: int = -9999, force_if_empty = False) -> list[Order]:
         orders: list[Order] = []
         order_depth: OrderDepth = state.order_depths[product]
-        maxAmount: int = alt_max if alt_max != -9999 else Trader.maxQuantities[product]
+        maxAmount: int = abs(alt_max if alt_max != -9999 else Trader.maxQuantities[product])
         quantity_guaranteed_filled: int = 0
 
         if isBuying:
@@ -792,7 +925,7 @@ class Trader:
             for orderPrice in sorted(order_depth.sell_orders.keys(), reverse=True):
                 if orderPrice <= price:
                     possibleQuantity: int = -1 * order_depth.sell_orders[orderPrice]
-                    possibleQuantity = capVolume(currentProductAmount, possibleQuantity, maxAmount)
+                    possibleQuantity = capVolume(currentProductAmount + quantity_guaranteed_filled, possibleQuantity, maxAmount)
                     if possibleQuantity != 0:
                         orders.append(Order(product, orderPrice, possibleQuantity))
                         quantity_guaranteed_filled += possibleQuantity
@@ -806,7 +939,7 @@ class Trader:
             for orderPrice in sorted(order_depth.buy_orders.keys(), reverse=False):
                 if orderPrice >= price:
                     possibleQuantity: int = -1 * order_depth.buy_orders[orderPrice]
-                    possibleQuantity = capVolume(currentProductAmount, possibleQuantity, -1 * maxAmount)
+                    possibleQuantity = capVolume(currentProductAmount + quantity_guaranteed_filled, possibleQuantity, -1 * maxAmount)
                     if possibleQuantity != 0:
                         orders.append(Order(product, orderPrice, possibleQuantity))
                         quantity_guaranteed_filled += possibleQuantity
@@ -891,7 +1024,7 @@ class Trader:
     '''
     Get the average of the best possible prices
     '''
-    def getEffectivePrice(self, order_depth: OrderDepth) -> float: 
+    def getMidpointPrice(self, order_depth: OrderDepth) -> float: 
         priceOne = Trader.getBestPossiblePrice(self, order_depth=order_depth, isBuying=True)
         priceTwo = Trader.getBestPossiblePrice(self, order_depth=order_depth, isBuying=False)
         avg: float = 0.0
@@ -916,7 +1049,7 @@ class Trader:
     def writeLog(self, state: TradingState, product: str, c1 = 0.0, c2 = 0.0, c3 = 0.0, c4 = 0.0, c5 = 0.0, c6 = 0.0, is_observation = False):
         currentProductAmount = state.position.get(product, 0)
         bid = Trader.getBestPossiblePrice(self, state.order_depths[product], True) if not is_observation else state.observations[product]
-        effectivePrice = Trader.getEffectivePrice(self, state.order_depths[product]) if not is_observation else state.observations[product]
+        midpointPrice = Trader.getMidpointPrice(self, state.order_depths[product]) if not is_observation else state.observations[product]
         ask = Trader.getBestPossiblePrice(self, state.order_depths[product], False) if not is_observation else state.observations[product]
 
         shortMa = self.shortMovingAverages[product][-1]
@@ -931,7 +1064,7 @@ class Trader:
         longAcc = self.longAccelerations[product]
         ultraLongAcc = self.ultraLongAccelerations[product]
 
-        print(state.timestamp, '"' + product + '"', currentProductAmount, bid, effectivePrice, ask, 
+        print(state.timestamp, '"' + product + '"', currentProductAmount, bid, midpointPrice, ask, 
               shortMa, longMa, ultraLongMa, shortVel, longVel, ultraLongVel, shortAcc, longAcc, ultraLongAcc,
               
               c1,c2,c3,c4,c5,c6, '"CSVDATA"', sep=",")
@@ -986,7 +1119,11 @@ def removeNoise(x: float, threshold: float) -> float:
 
 def significantDiffDirectional(x1: float, x2: float, threshold: float) -> bool:
     diff = (x2 - x1) / ((x1 + x2) / 2)
-    return diff > threshold if threshold > 0 else diff < threshold
+    if threshold < 0 and diff < threshold:
+        return True
+    elif threshold > 0 and diff > threshold:
+        return True
+    return False
 
 def diffDirectional(x1: float, x2: float) -> float:
     return (x2 - x1) / ((x1 + x2) / 2)
@@ -995,14 +1132,14 @@ def differentSigns(x1: float, x2: float) -> bool:
     return (x1 < 0 and x2 > 0) or (x1 > 0 and x2 < 0)
 
 
-def getRawTrend(values: List[float], maxLen: int) -> float:
-    if len(values) < maxLen // 5:
+def getRawTrend(values: List[float], maxLen: int, div = 5) -> float:
+    if len(values) < 1 + maxLen // 5:
         return 0
 
     return diffDirectional(values[-maxLen // 5], values[-1])
 
 
-def getTrend(values: List[float], maxLen: int, threshold: float) -> float:
-    result = getRawTrend(values, maxLen)
+def getTrend(values: List[float], maxLen: int, threshold: float, div=5) -> float:
+    result = getRawTrend(values, maxLen, div)
 
     return 1 if result > threshold else -1 if result < -threshold else 0

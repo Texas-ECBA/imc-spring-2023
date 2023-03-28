@@ -2,26 +2,40 @@
 import matplotlib.pyplot as plt
 import re # for regex
 
-# CONFIGURABLES
+# CONFIGURABLES -----------------------------
 filename = "output.txt"
-plotCombo = 0
+
+from_sim = True
+simulate = from_sim # can also change to True or False to simulate or not
+sim_day = 3
+
+if from_sim:
+    filename = 'simresults.txt'
+    if simulate:
+        import backtester
+        backtester.run_simulation(sim_day)
+
+plotCombo = 1
 
 if plotCombo == 0:
     plot_products = ["PINA_COLADAS", "COCONUTS"]
 elif plotCombo == 1:
-    plot_products = ["BERRIES"]
+    plot_products = ["DIVING_GEAR", "DOLPHIN_SIGHTINGS"]
 else:
-    plot_products = ["DOLPHIN_SIGHTINGS","DIVING_GEAR"]
+    plot_products = ["PINA_COLADAS", "COCONUTS", "BERRIES","DIVING_GEAR", "BANANAS", "DOLPHIN_SIGHTINGS"]
 
 plot_bid_and_ask = False
 plot_price = True
-plot_pnl = False
+plot_pnl = True
 plot_position = True
 
-plot_zero_vel = True
+plot_zero_vel = False
 plot_zero_acc = False
 plot_zero_pnl = False
-plot_const_customs = [0.0005, -0.0005, 0.0009, -0.0009]
+plot_const_customs = [0.00025]
+
+mirror_const_customs = True # if true, will plot the negative of each const custom
+
 
 customs_to_plot = {
     "PEARLS": [],
@@ -32,10 +46,17 @@ customs_to_plot = {
 
     "BERRIES": ["ultraLongMa"],
 
-    "DOLPHIN_SIGHTINGS": ["trend*", "*Ma", "dolphinTrend"],
-    "DIVING_GEAR": [ "ultraLongVel", "Diff", "ultraLongMa", "ultraLongTrend"],
+    "DOLPHIN_SIGHTINGS": ["trend*", "*Ma", "*Days"],
+    "DIVING_GEAR": [ "longMa", "sellPrice", "buyPrice",  "ultraLongMa", "ultra*Trend","ultra*Vel", "longVel"],
 }
-# END CONFIGURABLES
+# END CONFIGURABLES -----------------------------
+
+if mirror_const_customs:
+    new_const_customs = []
+    for i in plot_const_customs:
+        new_const_customs.append(-i)
+        new_const_customs.append(i)
+    plot_const_customs = new_const_customs    
 
 
 timestamps: dict[str, list[int]] = {}
@@ -55,8 +76,8 @@ productToCustomSeries = {
     "PINA_COLADAS": common_customs + ["PC NPrice", "Coconut NPrice", "Ratio", "+t", "-t", "versusAcc"],
     "COCONUTS": common_customs + ["buyPrice", "sellPrice", "Diff", "sigDiff"],
     "BERRIES": common_customs + ["buyPrice", "sellPrice", "Diff"],
-    "DOLPHIN_SIGHTINGS": common_customs + ["trend0", "trend1", "trend2", "possibleTrend", "dolphinTrend"],
-    "DIVING_GEAR": common_customs + ["ultraLongTrend", "Diff", "sigdiff"],
+    "DOLPHIN_SIGHTINGS": common_customs + ["trend0", "trend1", "trend2", "dolphinDays", "gearDays", "prediction"],
+    "DIVING_GEAR": common_customs + ["ultraLongTrend", "sellPrice", "buyPrice", "longTrend", "sd", "sdsAway"] ,
 }
 
 custom_colors = ["red", "green", "blue", "orange", "purple", "silver", "black", "pink", "brown",  "olive", "cyan", "magenta",  "coral", "navy", "maroon", "violet",   "khaki", "indigo", "darkgreen", "darkblue", "darkred", "darkorange", "darkgray", "darkcyan", "darkmagenta", "darkolivegreen", "darkkhaki", "darkgoldenrod", "darkviolet", "darkslategray", "darkslateblue", "darkseagreen", "darkorchid"]
@@ -73,10 +94,14 @@ for product in products:
         [] for i in range(len(productToCustomSeries[product]))
     ]
 
-with open(filename, "r") as f:
+jsonMode = False
+
+with open(filename, "r") as f:        
     lines = f.readlines()
+    if jsonMode:
+        lines = lines[8].split('": "')[1].split("\\n")
     for line in lines:
-        if len(line) < 2 or line[1] != ";" and (not "CSVDATA" in line or "TIMESTAMP" in line): # skip header and all lines without CSVDATA, but don't skip lines with ; in them
+        if len(line) < 2 or (line[1] != ";" and (not "CSVDATA" in line or "TIMESTAMP" in line)): # skip header and all lines without CSVDATA, but don't skip lines with ; in them
             continue
         line = line.strip()
 
@@ -86,6 +111,9 @@ with open(filename, "r") as f:
             product = line[2]
             if product not in plot_products:
                 continue
+            if jsonMode:
+                timestamps[product].append(timestamp)
+                prices[product].append(float(line[-2]))
             if timestamp in timestamps[product]:
                 pnls[product].append(float(line[-1]))
 
