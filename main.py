@@ -38,6 +38,12 @@ class OrderDepth:
         self.buy_orders: Dict[int, int] = {}
         self.sell_orders: Dict[int, int] = {}
 
+class OwnTrade:
+    def __init__(self, symbol: Symbol, price: int, quantity: int, counter_party: UserId = None) -> None: # type: ignore
+        self.symbol = symbol
+        self.price: int = price
+        self.quantity: int = quantity
+        self.counter_party = counter_party
 
 class Trade:
     def __init__(self, symbol: Symbol, price: int, quantity: int, buyer: UserId = None, seller: UserId = None, timestamp: int = 0) -> None: # type: ignore
@@ -53,7 +59,7 @@ class TradingState(object):
                  timestamp: Time,
                  listings: Dict[Symbol, Listing],
                  order_depths: Dict[Symbol, OrderDepth],
-                 own_trades: Dict[Symbol, List[Trade]],
+                 own_trades: Dict[Symbol, List[OwnTrade]],
                  market_trades: Dict[Symbol, List[Trade]],
                  position: Dict[Product, Position],
                  observations: Dict[Product, Observation]):
@@ -98,18 +104,21 @@ class Trader:
 
     ultraLongMovingAverages: Dict[Product, List[float]] = {    }
 
+    massiveMovingAverages: Dict[Product, List[float]] = {    }
+
     shortVelocities: Dict[Product, List[float]] = {    }
-
     longVelocities: Dict[Product, List[float]] = {    }
-
     ultraLongVelocities: Dict[Product, List[float]] = {    }
+    massiveVelocities: Dict[Product, List[float]] = {    }
 
     shortAccelerations: Dict[Product, float] = {    }
-
     longAccelerations: Dict[Product, float] = {    }
-
     ultraLongAccelerations: Dict[Product, float] = {    }
+    massiveAccelerations: Dict[Product, float] = {    }
     
+    priceHistory: Dict[Product, List[float]] = {    } # used for stddev (bollinger bands)
+    rsiHistory: Dict[Product, List[float]] = {    } # used for RSI
+    rsiStatus: Dict[Product, int] = {    } # 0 = neutral, 1 = overbought, -1 = oversold
 
     shortTermAboveLongTerm: bool = False
     tryToBuy: bool = True
@@ -143,12 +152,19 @@ class Trader:
 
     FullBuy = Hold = FullSell = False
 
+
     # CONFIGURABLE PARAMETERS
     shortMovingAverageSize: int = 10
     longMovingAverageSize: int = 50
     ultraLongMovingAverageSize: int = 200
+    massiveMovingAverageSize: int = 500
     stddevThreshold: float = 0.5
     exponentialSmoothing: float = 2.0
+    
+    bollingerBandLength: int = 20
+    bollingerBandStdDev: float = 2.0
+    priceHistoryLength: int = 500
+
     # Define a fair value for the PEARLS.
     pearl_acceptable_price = 10000
     # ignored for now
@@ -168,6 +184,9 @@ class Trader:
             self.shortAccelerations[product] = 0
             self.longAccelerations[product] = 0
             self.ultraLongAccelerations[product] = 0
+            self.priceHistory[product] = []
+            self.rsiHistory[product] = []
+            self.rsiStatus[product] = 0
 
     """
     Only method required. It takes all buy and sell orders for all symbols as an input,
@@ -219,6 +238,12 @@ class Trader:
             midpointPrice = self.getMidpointPrice(state.order_depths[product])
             if midpointPrice == -1:
                 continue
+
+            self.priceHistory[product].append(midpointPrice)
+
+            if len(self.priceHistory[product]) > self.priceHistoryLength:
+                self.priceHistory[product].pop(0)
+
             self.processMovingAverage(product, self.shortMovingAverageSize, midpointPrice, False)
             self.processMovingAverage(product, self.longMovingAverageSize, midpointPrice, False)
             self.processMovingAverage(product, self.ultraLongMovingAverageSize, midpointPrice, False)
@@ -242,7 +267,7 @@ class Trader:
                 result[product] = self.handlePinaColadas(state, product, currentProductAmount)
 
             if product == 'COCONUTS':
-                result[product] = self.handleCoconuts(state, product, currentProductAmount)
+                result[product] = self.tradeStrategyBollingerBands(state, product, currentProductAmount)
                 pass
 
             if product == 'DIVING_GEAR':
@@ -254,19 +279,19 @@ class Trader:
                 pass
 
             if product == 'PICNIC_BASKET':
-                result[product] = self.handlePicnicBaskets(state, product, currentProductAmount)
+                result[product] = self.tradeStrategyBollingerBands(state, product, currentProductAmount)
                 pass
 
             if product == 'BAGUETTE':
-                result[product] = self.handleBaguettes(state, product, currentProductAmount)
+                result[product] = self.tradeStrategyBollingerBands(state, product, currentProductAmount)
                 pass
 
             if product == 'DIP':
-                result[product] = self.handleDip(state, product, currentProductAmount)
+                result[product] = self.tradeStrategyBollingerBands(state, product, currentProductAmount)
                 pass
 
             if product == 'UKULELE':
-                result[product] = self.handleUkulele(state, product, currentProductAmount)
+                result[product] = self.tradeStrategyBollingerBands(state, product, currentProductAmount)
                 pass
 
         return result
@@ -329,7 +354,7 @@ class Trader:
     def handleBananas(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
         orders: list[Order] = []
         order_depth = state.order_depths[product]        
-        priceAverage: float = Trader.computeSimpleAverage(self, self.shortMovingAverages[product])
+        priceAverage: float = computeSimpleAverage(self.shortMovingAverages[product])
         
         if (priceAverage == -1 or len(self.shortMovingAverages[product]) < self.shortMovingAverageSize):
             print("Not enough data to calculate moving average for bananas, skipping")
@@ -382,7 +407,7 @@ class Trader:
         desperation = min(2, abs(base - ratio) * 1000)
 
         # calculate standard deviation of ultra long coconut moving average
-        priceAverage: float = Trader.computeSimpleAverage(self, self.ultraLongMovingAverages["COCONUTS"])
+        priceAverage: float = computeSimpleAverage(self.ultraLongMovingAverages["COCONUTS"])
         recentStandardDeviation: float = 0
         for observation in self.ultraLongMovingAverages["COCONUTS"]:
             recentStandardDeviation += (observation - priceAverage) ** 2
@@ -484,7 +509,7 @@ class Trader:
 
         orders: list[Order] = []
         order_depth = state.order_depths[product]        
-        priceAverage: float = Trader.computeSimpleAverage(self, self.shortMovingAverages[product])
+        priceAverage: float = computeSimpleAverage(self.shortMovingAverages[product])
         
         if (priceAverage == -1 or len(self.shortMovingAverages[product]) < self.shortMovingAverageSize):
             print("Not enough data to calculate moving average for ukeleles, skipping")
@@ -606,16 +631,14 @@ class Trader:
                 orders = self.getAllOrdersBetterThan(product, state, False, midpointPrice + 2, currentProductAmount, alt_max=0)
             elif currentProductAmount < 0:
                 orders = self.getAllOrdersBetterThan(product, state, True, midpointPrice - 2, currentProductAmount, alt_max=0)
-            
-
 
         return orders
 
     def handleMayberries(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
         orders: list[Order] = []
         order_depth = state.order_depths[product]        
-        priceAverage: float = Trader.computeSimpleAverage(self, self.shortMovingAverages[product])
-        priceLongAverage: float = Trader.computeSimpleAverage(self, self.longMovingAverages[product])
+        priceAverage: float = computeSimpleAverage(self.shortMovingAverages[product])
+        priceLongAverage: float = computeSimpleAverage(self.longMovingAverages[product])
 
         if (priceAverage == -1 or priceLongAverage == -1 or len(self.longMovingAverages[product]) < self.longMovingAverageSize):
             print("Not enough data to calculate moving average for berries, skipping")
@@ -767,7 +790,7 @@ class Trader:
         # code for volatility based trading
         volatilityOrders: list[Order] = []
         currentLMA: float = self.longMovingAverages[product][-1]
-        averageLMA: float = self.computeSimpleAverage(self.longMovingAverages[product])
+        averageLMA: float = computeSimpleAverage(self.longMovingAverages[product])
 
         recentStandardDeviation: float = 0
         for observation in self.longMovingAverages[product]:
@@ -934,6 +957,120 @@ class Trader:
 
         self.writeLog(state, product, rawTrend0, rawTrend1, rawTrend2, self.dolphinTrendDays, self.divingGearTrendDays, self.predictedDivingGearTrend / 2000, is_observation=True)
 
+
+    def tradeStrategyBollingerBands(self, state: TradingState, product: str, currentProductAmount: int):
+        orders = []
+        time_period = 100
+
+        if len(self.priceHistory[product]) < time_period:
+            return orders
+        
+        # use the 100 most recent prices to calculate the moving average        
+        recentPrices = self.priceHistory[product][-time_period:]
+        movingAverage = sum(recentPrices) / len(recentPrices)
+
+        # use the 20 most recent prices to calculate the standard deviation
+        stddev = computeStdDev(recentPrices)
+
+        # calculate the upper and lower bands
+        upperBand = movingAverage + stddev * 1.5
+        lowerBand = movingAverage - stddev * 1.5
+
+        # get the trend, since we don't want to trade against the trend
+        trend = self.getIndicatorTripleMovingAverage(product)
+        rsi = self.getIndicatorRSI(product, period=time_period)
+        # log the moving average, upper band, and lower band
+
+        # if the price is above the upper band, sell
+        currentPrice = self.getMidpointPrice(state.order_depths[product])
+        shortVel = self.shortVelocities[product][-1] if len(self.shortVelocities[product]) > 0 else 0
+
+        if rsi > 63:
+            self.rsiStatus[product] = 1
+        elif rsi < 37:
+            self.rsiStatus[product] = -1
+        elif abs(rsi - 50) < 5:
+            self.rsiStatus[product] = 0
+
+        if self.rsiStatus[product] == 1 and shortVel < 0: # was overbought, now heading down
+            orders = orders + self.getAllOrdersBetterThan(product, state, False, currentPrice + 2, currentProductAmount)
+        elif self.rsiStatus[product] == -1 and shortVel > 0:
+            orders = orders + self.getAllOrdersBetterThan(product, state, True, currentPrice - 2, currentProductAmount)
+
+        # # if we are long and the price just crossed above the moving average, sell
+        # if currentProductAmount > 0 and currentPrice < self.ultraLongMovingAverages[product][-1] and trend != 1:
+        #     orders = orders + self.getAllOrdersBetterThan(product, state, False, movingAverage, currentProductAmount, alt_max=0)
+
+        # # if we are short and the price just crossed below the moving average, buy
+        # elif currentProductAmount < 0 and currentPrice > self.ultraLongMovingAverages[product][-1] and trend != -1:
+        #     orders = orders + self.getAllOrdersBetterThan(product, state, True, movingAverage, currentProductAmount, alt_max=0)
+
+        self.writeLog(state, product, movingAverage, stddev, trend, rsi, self.rsiStatus[product])
+
+
+        return orders
+
+
+    def getIndicatorTripleMovingAverage(self, product: str):
+        smallLength = 50
+        mediumLength = 100
+        largeLength = 200
+
+        if len(self.priceHistory[product]) < largeLength:
+            return 0
+        
+        smallMa = sum(self.priceHistory[product][-smallLength:]) / smallLength
+        mediumMa = sum(self.priceHistory[product][-mediumLength:]) / mediumLength
+        largeMa = sum(self.priceHistory[product][-largeLength:]) / largeLength
+
+        if smallMa > mediumMa and mediumMa > largeMa:
+            return 1
+        elif smallMa < mediumMa and mediumMa < largeMa:
+            return -1
+        else:
+            return 0
+
+    def getIndicatorRSI(self, product: str, period: int = 14):
+        if len(self.priceHistory[product]) < period:
+            return 0
+        
+        # calculate the previous average gain and average loss
+        gains = []
+        losses = []
+        for i in range(2, period):
+            change = self.priceHistory[product][-i] - self.priceHistory[product][-i - 1]
+            if change > 0:
+                gains.append(change)
+            elif change < 0:
+                losses.append(abs(change))
+            else:
+                gains.append(0)
+                losses.append(0)
+
+        previousAvgGain = sum(gains) / period if len(gains) > 0 else 0
+        previousAvgLoss = sum(losses) / period if len(losses) > 0 else 0
+        currentGain = 0
+        currentLoss = 0
+
+        if self.priceHistory[product][-1] > self.priceHistory[product][-2]:
+            currentGain = self.priceHistory[product][-1] - self.priceHistory[product][-2]
+        elif self.priceHistory[product][-1] < self.priceHistory[product][-2]:
+            currentLoss = abs(self.priceHistory[product][-1] - self.priceHistory[product][-2])
+
+        # calculate the current average gain and average loss
+        avgGain = (previousAvgGain * (period - 1) + currentGain)
+        avgLoss = (previousAvgLoss * (period - 1) + currentLoss)
+
+        if avgLoss == 0:
+            return 100
+
+        # calculate the relative strength
+        relativeStrength = avgGain / avgLoss 
+
+        # calculate the relative strength index
+        rsi = 100 - (100 / (1 + relativeStrength))
+
+        return rsi
 
 # --------------------- END PRODUCT HANDLERS --------------------- #
 
@@ -1117,11 +1254,6 @@ class Trader:
         else:
             self.ultraLongAccelerations[product] = newAcceleration * 0.3 + self.ultraLongAccelerations[product] * 0.7
 
-    def computeSimpleAverage(self, list: List) -> float:
-        if len(list) == 0:
-            return -1
-        return sum(list) / len(list)
-    
     '''
     Get the average of the best possible prices
     '''
@@ -1165,8 +1297,10 @@ class Trader:
         longAcc = self.longAccelerations[product]
         ultraLongAcc = self.ultraLongAccelerations[product]
 
+        volume = sum( [x for x in state.order_depths[product].buy_orders.values()] ) + sum( [x for x in state.order_depths[product].sell_orders.values()] )
+
         print(state.timestamp, '"' + product + '"', currentProductAmount, bid, midpointPrice, ask, 
-              shortMa, longMa, ultraLongMa, shortVel, longVel, ultraLongVel, shortAcc, longAcc, ultraLongAcc,
+              shortMa, longMa, ultraLongMa, shortVel, longVel, ultraLongVel, shortAcc, longAcc, ultraLongAcc, volume,
               
               c1,c2,c3,c4,c5,c6, '"CSVDATA"', sep=",")
 
@@ -1244,3 +1378,17 @@ def getTrend(values: List[float], maxLen: int, threshold: float, div=5) -> float
     result = getRawTrend(values, maxLen, div)
 
     return 1 if result > threshold else -1 if result < -threshold else 0
+
+def computeStdDev(values: List[float]) -> float:    
+    if len(values) == 0:
+        return 0
+
+    avg = sum(values) / len(values)
+    variance = sum([pow(x - avg, 2) for x in values]) / len(values)
+    return math.sqrt(variance)
+
+def computeSimpleAverage(list: List) -> float:
+    if len(list) == 0:
+        return -1
+    return sum(list) / len(list)
+    
