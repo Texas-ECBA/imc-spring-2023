@@ -10,7 +10,7 @@ from_sim = True
 simulate = True # can also change to True or False to simulate or not
 plot_monkeys = False
 plot_monkey_volume = True # not very useful btw
-sim_day = 3
+sim_day = 1
 sim_round = 4
 
 monkey_tradefile = "./training/trades_round_" + str(sim_round) + "_day_" + str(sim_day) + "_wn.csv" #wn = with names
@@ -29,13 +29,13 @@ elif plotCombo == 1:
     plot_products = ["DIVING_GEAR", "DOLPHIN_SIGHTINGS"]
 else:
     #plot_products = ["PICNIC_BASKET", "UKULELE", "DIP", "BAGUETTE"]
-    plot_products = ["PICNIC_BASKET"]
+    plot_products = ["UKULELE"]
 
 plot_bid_and_ask = False
 plot_price = True
 plot_pnl = True
 plot_position = True
-plot_volume = False # not very useful btw
+plot_volume = True # not very useful btw
 
 
 plot_zero_vel = False
@@ -59,8 +59,8 @@ customs_to_plot = {
     "DIVING_GEAR": [ "longMa", "sellPrice", "buyPrice",  "ultraLongMa", "ultra*Trend","ultra*Vel", "longVel"],
     "DIP": [],
     "BAGUETTE": [],
-    "UKULELE": ["*Ma", "*Trend", ],
-    "PICNIC_BASKET": ["bbavgPrice", "rstatus", "shortVel", "rsi"]
+    "UKULELE": [ "bandVel", "rsi", "upperPrice", "lowerPrice", "overallVel", 'bbb'],
+    "PICNIC_BASKET": ["bbavgPrice", "rstatus", "rsi", "overallVel"]
 }
 # END CONFIGURABLES -----------------------------
 # set stdout back to normal (console)
@@ -95,14 +95,14 @@ productToCustomSeries = {
     "PEARLS": common_customs + ["CUSTOM1", "CUSTOM2", "CUSTOM3", "CUSTOM4", "CUSTOM5"],
     "BANANAS": common_customs + ["buyPrice", "sellPrice"],
     "PINA_COLADAS": common_customs + ["PC NPrice", "Coconut NPrice", "Ratio", "+t", "-t", "versusAcc"],
-    "COCONUTS": common_customs + ["bbavgPrice", "upperPrice", "lowerPrice", "stddev", "trend", "rsi"],
+    "COCONUTS": common_customs + ["rsi", "rstatus"],
     "BERRIES": common_customs + ["buyPrice", "sellPrice", "Diff"],
     "DOLPHIN_SIGHTINGS": common_customs + ["trend0", "trend1", "trend2", "dolphinDays", "gearDays", "prediction"],
     "DIVING_GEAR": common_customs + ["ultraLongTrend", "sellPrice", "buyPrice", "longTrend", "sd", "sdsAway"] ,
-    "DIP": common_customs,
-    "BAGUETTE": common_customs,
-    "UKULELE": common_customs + ["sdShort", "sdLong", "sdUL","S-L_trend","L-UL_trend","ultraLongTrend"],
-    "PICNIC_BASKET": common_customs + ["bbavgPrice", "stddev", "trend", "rsi", "rstatus"],
+    "DIP": common_customs + ["rsi", "rstatus"],
+    "BAGUETTE": common_customs + ["rsi", "rstatus"],
+    "UKULELE": common_customs + ["rsi", "overallVel", "bandVel", "upperPrice", "lowerPrice", "bbb"],
+    "PICNIC_BASKET": common_customs + ["rsi", "rstatus"],
 }
 
 custom_colors = ["red", "green", "blue", "orange", "purple", "silver", "black", "pink", "brown",  "olive", "cyan", "magenta",  "coral", "navy", "maroon", "violet",   "khaki", "indigo", "darkgreen", "darkblue", "darkred", "darkorange", "darkgray", "darkcyan", "darkmagenta", "darkolivegreen", "darkkhaki", "darkgoldenrod", "darkviolet", "darkslategray", "darkslateblue", "darkseagreen", "darkorchid"]

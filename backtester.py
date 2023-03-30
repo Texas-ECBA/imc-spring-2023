@@ -199,7 +199,7 @@ def simulate_alternative(
     create_log_file(round, day, states, profits_by_symbol, balance_by_symbol, trader)
     profit_balance_monkeys = {}
     trades_monkeys = {}
-    if True:
+    if monkeys:
         profit_balance_monkeys, trades_monkeys, profit_monkeys, balance_monkeys, monkey_positions_by_timestamp = monkey_positions(monkey_names, states, round)
         # reset stdouts
         sys.stdout = sys.__stdout__
@@ -226,6 +226,11 @@ def trades_position_pnl_run(
         ):
         for time, state in states.items():
             position = copy.deepcopy(state.position)
+
+            if time == 500000:
+                trader.reset()
+
+
             orders = trader.run(state)
             trades = clear_order_book(orders, state.order_depths, time, halfway)
             mids = calc_mid(states, round, time, max_time)
@@ -375,6 +380,8 @@ def monkey_positions(monkey_names: list[str], states: dict[int, TradingState], r
 
 def cleanup_order_volumes(org_orders: List[Order]) -> List[Order]:
     orders = []
+    if org_orders == None:
+        return orders
     for order_1 in org_orders:
         final_order = copy.copy(order_1)
         for order_2 in org_orders:

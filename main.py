@@ -119,6 +119,10 @@ class Trader:
     priceHistory: Dict[Product, List[float]] = {    } # used for stddev (bollinger bands)
     rsiHistory: Dict[Product, List[float]] = {    } # used for RSI
     rsiStatus: Dict[Product, int] = {    } # 0 = neutral, 1 = overbought, -1 = oversold
+    bollingerBreakout: Dict[Product, int] = {    } 
+    recentBollingerBandwidths: Dict[Product, List[float]] = {    }
+    recentBBUpCrosses: Dict[Product, int] = {    } # Timestamp of last cross
+    recentBBDownCrosses: Dict[Product, int] = {    } # Timestamp of last cross
 
     shortTermAboveLongTerm: bool = False
     tryToBuy: bool = True
@@ -171,9 +175,7 @@ class Trader:
     bananasQuantityAffinity: int = 2
 
 
-
-    def __init__(self):
-        # initialize the tracked stats
+    def reset(self):
         for product in self.trackingStatsOf:
             self.shortMovingAverages[product] = []
             self.longMovingAverages[product] = []
@@ -187,6 +189,16 @@ class Trader:
             self.priceHistory[product] = []
             self.rsiHistory[product] = []
             self.rsiStatus[product] = 0
+            self.bollingerBreakout[product] = 0
+            self.recentBollingerBandwidths[product] = []
+            self.recentBBUpCrosses[product] = 0
+            self.recentBBDownCrosses[product] = 0
+
+    def __init__(self):
+        # initialize the tracked stats
+        self.reset()
+
+
 
     """
     Only method required. It takes all buy and sell orders for all symbols as an input,
@@ -267,7 +279,7 @@ class Trader:
                 result[product] = self.handlePinaColadas(state, product, currentProductAmount)
 
             if product == 'COCONUTS':
-                result[product] = self.tradeStrategyBollingerBands(state, product, currentProductAmount)
+                result[product] = self.handleCoconuts(state, product, currentProductAmount)
                 pass
 
             if product == 'DIVING_GEAR':
@@ -279,15 +291,15 @@ class Trader:
                 pass
 
             if product == 'PICNIC_BASKET':
-                result[product] = self.tradeStrategyBollingerBands(state, product, currentProductAmount)
+                result[product] = self.handlePicnicBaskets(state, product, currentProductAmount)
                 pass
 
             if product == 'BAGUETTE':
-                result[product] = self.tradeStrategyBollingerBands(state, product, currentProductAmount)
+                result[product] = self.handleBaguettes(state, product, currentProductAmount)
                 pass
 
             if product == 'DIP':
-                result[product] = self.tradeStrategyBollingerBands(state, product, currentProductAmount)
+                #result[product] = self.handleDip(state, product, currentProductAmount)
                 pass
 
             if product == 'UKULELE':
@@ -450,38 +462,60 @@ class Trader:
         return orders if self.getMidpointPrice(state.order_depths[product]) < upper_limit and self.getMidpointPrice(state.order_depths[product]) > lower_limit else closeOrders
 
     def handlePicnicBaskets(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
-        orders = self.getAllOrdersBetterThan(product, state, True, 73790, currentProductAmount)
-        orders = orders + self.getAllOrdersBetterThan(product, state, False, 74210, currentProductAmount)
-        self.writeLog(state, product)
+        orders = []
+        time_period = 200
 
-        upper_limit = 74420
-        lower_limit = 73560
+        if len(self.priceHistory[product]) < time_period:
+            return orders
 
-        # backup
-        closeOrders = [] 
-        if currentProductAmount > 0:
-            closeOrders = self.getAllOrdersBetterThan(product, state, False, lower_limit, currentProductAmount)
-        else:
-            closeOrders = self.getAllOrdersBetterThan(product, state, True, upper_limit, currentProductAmount)
+        rsi = self.getIndicatorRSI(product, period=time_period//2)
+        #self.rsiHistory[product].append(rsi)
+        currentPrice = self.getMidpointPrice(state.order_depths[product])
+        shortVel = self.shortVelocities[product][-1]
 
-        return orders if self.getMidpointPrice(state.order_depths[product]) < upper_limit and self.getMidpointPrice(state.order_depths[product]) > lower_limit else closeOrders
+        if rsi > 61:
+            self.rsiStatus[product] = 1
+        elif rsi < 39:
+            self.rsiStatus[product] = -1
 
+        if self.rsiStatus[product] == 1 and shortVel < 3:
+            orders = orders + self.getAllOrdersBetterThan(product, state, False, currentPrice - 9 - (rsi - 61), currentProductAmount)
+        elif self.rsiStatus[product] == -1 and shortVel > -3:
+            orders = orders + self.getAllOrdersBetterThan(product, state, True, currentPrice + 9 + (-rsi + 39), currentProductAmount)
+
+        self.writeLog(state, product, rsi, self.rsiStatus[product] * 15 + 50)
+
+        return orders
+    
     def handleBaguettes(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
-        orders = self.getAllOrdersBetterThan(product, state, True, 12164, currentProductAmount)
-        orders = orders + self.getAllOrdersBetterThan(product, state, False, 12407, currentProductAmount)
-        self.writeLog(state, product)
+        time_period = 200
+        rsi = self.getIndicatorRSI(product, period=30)
+        currentPrice = self.getMidpointPrice(state.order_depths[product])
 
-        upper_limit = 12467
-        lower_limit = 12104
+        if rsi > 70:
+            self.rsiStatus[product] = 1
+        elif rsi < 30:
+            self.rsiStatus[product] = -1
 
-        # backup
-        closeOrders = [] 
-        if currentProductAmount > 0:
-            closeOrders = self.getAllOrdersBetterThan(product, state, False, lower_limit, currentProductAmount)
+        # calculate the bollinger bands
+        if len(self.priceHistory[product]) < time_period:
+            return []
+        
+        mean = sum(self.priceHistory[product][-time_period:]) / time_period
+        std = math.sqrt(sum([(x - mean)**2 for x in self.priceHistory[product][-time_period:]]) / time_period)
+        longVel = self.priceHistory[product][-1] - self.priceHistory[product][-time_period]
+        upperBand = mean + 0 * std
+        lowerBand = mean - 0 * std
+
+        if(self.rsiStatus[product] == 1 and self.getMidpointPrice(state.order_depths[product]) > upperBand):
+            orders = self.getAllOrdersBetterThan(product, state, False, currentPrice, currentProductAmount)
+        elif(self.rsiStatus[product] == -1 and self.getMidpointPrice(state.order_depths[product]) < lowerBand):
+            orders = self.getAllOrdersBetterThan(product, state, True, currentPrice, currentProductAmount)
         else:
-            closeOrders = self.getAllOrdersBetterThan(product, state, True, upper_limit, currentProductAmount)
+            orders = []
 
-        return orders if self.getMidpointPrice(state.order_depths[product]) < upper_limit and self.getMidpointPrice(state.order_depths[product]) > lower_limit else closeOrders
+    
+        return orders #type: ignore #if self.getMidpointPrice(state.order_depths[product]) < upper_limit and self.getMidpointPrice(state.order_depths[product]) > lower_limit else closeOrders
 
     def handleDip(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
         orders = self.getAllOrdersBetterThan(product, state, True, 7069, currentProductAmount)
@@ -583,7 +617,6 @@ class Trader:
 
         return orders
     
-
 
     def handleCoconutsOLD(self, state: TradingState, product: str, currentProductAmount: int) -> list[Order]:
         if len(self.shortMovingAverages[product]) < self.shortMovingAverageSize:
@@ -957,59 +990,90 @@ class Trader:
 
         self.writeLog(state, product, rawTrend0, rawTrend1, rawTrend2, self.dolphinTrendDays, self.divingGearTrendDays, self.predictedDivingGearTrend / 2000, is_observation=True)
 
-
     def tradeStrategyBollingerBands(self, state: TradingState, product: str, currentProductAmount: int):
-        orders = []
-        time_period = 100
+        return []
+        # time_period = 200
+        # rsi = self.getIndicatorRSI(product, period=100)
+        # currentPrice = self.getMidpointPrice(state.order_depths[product])
 
-        if len(self.priceHistory[product]) < time_period:
-            return orders
+        # if rsi > 63:
+        #     self.rsiStatus[product] = 1
+        # elif rsi < 37:
+        #     self.rsiStatus[product] = -1
+
+        # if self.rsiStatus[product] == 1 and rsi < 45:
+        #     self.rsiStatus[product] = 0
+        # elif self.rsiStatus[product] == -1 and rsi > 55:
+        #     self.rsiStatus[product] = 0
+
+        # # calculate the bollinger bands
+        # if len(self.priceHistory[product]) < time_period:
+        #     return []
         
-        # use the 100 most recent prices to calculate the moving average        
-        recentPrices = self.priceHistory[product][-time_period:]
-        movingAverage = sum(recentPrices) / len(recentPrices)
+        # mean = sum(self.priceHistory[product][-time_period:]) / time_period
+        # std = math.sqrt(sum([(x - mean)**2 for x in self.priceHistory[product][-time_period:]]) / time_period)
+        # longVel = self.priceHistory[product][-1] - self.priceHistory[product][-time_period]
+        # upperBand = mean + 2 * std
+        # lowerBand = mean - 2 * std
+        # self.recentBollingerBandwidths[product].append(upperBand - lowerBand)
 
-        # use the 20 most recent prices to calculate the standard deviation
-        stddev = computeStdDev(recentPrices)
+        # signal = 0        
+        # if currentPrice > upperBand:
+        #     signal = -1
+        # elif currentPrice < lowerBand:
+        #     signal = 1
+        
+        # if len(self.recentBollingerBandwidths[product]) > 100:
+        #     self.recentBollingerBandwidths[product].pop(0)
+            
+        # recentBBMean = sum(self.recentBollingerBandwidths[product]) / len(self.recentBollingerBandwidths[product])
+        # recentBBStd = math.sqrt(sum([(x - recentBBMean)**2 for x in self.recentBollingerBandwidths[product]]) / len(self.recentBollingerBandwidths[product]))
+        
+        # bandThresh = min(recentBBMean + 0.5 * recentBBStd + 30, 120)
+        # bandWidth = upperBand - lowerBand
 
-        # calculate the upper and lower bands
-        upperBand = movingAverage + stddev * 1.5
-        lowerBand = movingAverage - stddev * 1.5
+        # weakBreakout = 0
 
-        # get the trend, since we don't want to trade against the trend
-        trend = self.getIndicatorTripleMovingAverage(product)
-        rsi = self.getIndicatorRSI(product, period=time_period)
-        # log the moving average, upper band, and lower band
+        # if (upperBand - lowerBand) > bandThresh and len(self.recentBollingerBandwidths[product]) > 50:
+        #     if currentPrice > upperBand:
+        #         self.bollingerBreakout[product] = 1
+        #     elif currentPrice < lowerBand:
+        #         self.bollingerBreakout[product] = -1
+        
+        # if bandWidth > bandThresh * 0.8 - 30:
+        #     if currentPrice > upperBand:
+        #         weakBreakout = 1
+        #     elif currentPrice < lowerBand:
+        #         weakBreakout = -1
 
-        # if the price is above the upper band, sell
-        currentPrice = self.getMidpointPrice(state.order_depths[product])
-        shortVel = self.shortVelocities[product][-1] if len(self.shortVelocities[product]) > 0 else 0
+        # orders = []
 
-        if rsi > 63:
-            self.rsiStatus[product] = 1
-        elif rsi < 37:
-            self.rsiStatus[product] = -1
-        elif abs(rsi - 50) < 5:
-            self.rsiStatus[product] = 0
+        # if self.bollingerBreakout[product] == 1 and (upperBand - lowerBand < 20 or bandWidth < bandThresh / 2) or rsi < 35:
+        #     self.bollingerBreakout[product] = 0
+        # elif self.bollingerBreakout[product] == -1 and (upperBand - lowerBand < 20 or bandWidth < bandThresh / 2) or rsi > 65:
+        #     self.bollingerBreakout[product] = 0
 
-        if self.rsiStatus[product] == 1 and shortVel < 0: # was overbought, now heading down
-            orders = orders + self.getAllOrdersBetterThan(product, state, False, currentPrice + 2, currentProductAmount)
-        elif self.rsiStatus[product] == -1 and shortVel > 0:
-            orders = orders + self.getAllOrdersBetterThan(product, state, True, currentPrice - 2, currentProductAmount)
+        # placedOrder = False
+        # if self.rsiStatus[product] == -1 or self.bollingerBreakout[product] == -1 or signal == -1:
+        #     if self.bollingerBreakout[product] != 1:
+        #         orders = self.getAllOrdersBetterThan(product, state, False, currentPrice - 4, currentProductAmount)
+        #         placedOrder = True
 
-        # # if we are long and the price just crossed above the moving average, sell
-        # if currentProductAmount > 0 and currentPrice < self.ultraLongMovingAverages[product][-1] and trend != 1:
-        #     orders = orders + self.getAllOrdersBetterThan(product, state, False, movingAverage, currentProductAmount, alt_max=0)
-
-        # # if we are short and the price just crossed below the moving average, buy
-        # elif currentProductAmount < 0 and currentPrice > self.ultraLongMovingAverages[product][-1] and trend != -1:
-        #     orders = orders + self.getAllOrdersBetterThan(product, state, True, movingAverage, currentProductAmount, alt_max=0)
-
-        self.writeLog(state, product, movingAverage, stddev, trend, rsi, self.rsiStatus[product])
+        # if self.rsiStatus[product] == 1 or self.bollingerBreakout[product] == 1 or signal == 1:
+        #     if self.bollingerBreakout[product] != -1:
+        #         orders = self.getAllOrdersBetterThan(product, state, True, currentPrice + 4, currentProductAmount)
+        #         placedOrder = True
 
 
-        return orders
+        # if not placedOrder and currentProductAmount != 0:
+        #     if currentProductAmount > 0 and (currentPrice > mean + 0.5 * std or weakBreakout == -1):
+        #         orders = self.getAllOrdersBetterThan(product, state, False, currentPrice - 3 + 1.5 * weakBreakout, currentProductAmount, alt_max=0)
+        #     elif currentProductAmount < 0 and (currentPrice < mean - 0.5 * std or weakBreakout == 1):
+        #         orders =  self.getAllOrdersBetterThan(product, state, True, currentPrice + 3 + 1.5 * weakBreakout, currentProductAmount, alt_max=0)
 
+        # self.writeLog(state, product, rsi, bandThresh, upperBand - lowerBand, upperBand, lowerBand, self.bollingerBreakout[product] * 20 + 50)
+
+        # return orders
 
     def getIndicatorTripleMovingAverage(self, product: str):
         smallLength = 50
@@ -1032,7 +1096,7 @@ class Trader:
 
     def getIndicatorRSI(self, product: str, period: int = 14):
         if len(self.priceHistory[product]) < period:
-            return 0
+            return 50
         
         # calculate the previous average gain and average loss
         gains = []
@@ -1297,12 +1361,15 @@ class Trader:
         longAcc = self.longAccelerations[product]
         ultraLongAcc = self.ultraLongAccelerations[product]
 
-        volume = sum( [x for x in state.order_depths[product].buy_orders.values()] ) + sum( [x for x in state.order_depths[product].sell_orders.values()] )
+        if not is_observation:
+            volume = sum( [abs(x.quantity) for x in state.market_trades[product]] )
+        else:
+            volume = 0
 
-        print(state.timestamp, '"' + product + '"', currentProductAmount, bid, midpointPrice, ask, 
-              shortMa, longMa, ultraLongMa, shortVel, longVel, ultraLongVel, shortAcc, longAcc, ultraLongAcc, volume,
+        # print(state.timestamp, '"' + product + '"', currentProductAmount, bid, midpointPrice, ask, 
+        #       shortMa, longMa, ultraLongMa, shortVel, longVel, ultraLongVel, shortAcc, longAcc, ultraLongAcc, volume,
               
-              c1,c2,c3,c4,c5,c6, '"CSVDATA"', sep=",")
+        #       c1,c2,c3,c4,c5,c6, '"CSVDATA"', sep=",")
 
 ######### UTILITY FUNCTIONS #########
 
