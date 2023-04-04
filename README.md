@@ -19,15 +19,15 @@ Aryan Aggarwal, Saatvik Aggarwal, Ryan Flick, Varun Menta, Sanjay Sivakumar.
 
 ## Final Round P&L Graphs
 
-[Baguette and Berries](archive/FinalRound_Baguette_Berries.png)
+![Baguette and Berries](archive/FinalRound_Baguette_Berries.png)
 
-[Bananas and Pearls](archive/FinalRound_Bananas_Pearls.png)
+![Bananas and Pearls](archive/FinalRound_Bananas_Pearls.png)
 
-[Diving Gear](archive/FinalRound_DivingGear_DolphinSightings.png)
+![Diving Gear](archive/FinalRound_DivingGear_DolphinSightings.png)
 
-[Picnic Basket](archive/FinalRound_PicnicBasket.png)
+![Picnic Basket](archive/FinalRound_PicnicBasket.png)
 
-[Pina Coladas and Coconuts](archive/FinalRound_PinaColadas_Coconuts.png)
+![Pina Coladas and Coconuts](archive/FinalRound_PinaColadas_Coconuts.png)
 
 ## Final Round P&Ls
 
