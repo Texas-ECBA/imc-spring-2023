@@ -8,6 +8,8 @@ Aryan Aggarwal, Saatvik Aggarwal, Ryan Flick, Varun Menta, Sanjay Sivakumar.
 
 ## Performance
 
+**Top 2%**
+
 - 1st: 1,101k
 - 10th: 882k
 - 100th: 523k 
@@ -39,7 +41,7 @@ Aryan Aggarwal, Saatvik Aggarwal, Ryan Flick, Varun Menta, Sanjay Sivakumar.
 - Bananas: 3432
 - Pina Coladas: 30468
 - Pearls: 15750
-- Coconuts: 7903
+- Coconuts: -2760
 - Dip: 0
 
 **TOTAL: 85132**
