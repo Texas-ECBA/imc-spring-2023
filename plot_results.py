@@ -4,12 +4,13 @@ import matplotlib.pyplot as plt
 import re # for regex
 
 # CONFIGURABLES -----------------------------
-filename = "whole-round-four-log.csv"
+filename = "whole-round-five-log.csv"
 
-from_sim = True
+from_sim = False 
 simulate = True # can also change to True or False to simulate or not
 plot_monkeys = False
 plot_monkey_volume = True # not very useful btw
+resultsMode = True # if true, plots round results (change in parsing)
 sim_day = 1
 sim_round = 4
 
@@ -29,7 +30,7 @@ elif plotCombo == 1:
     plot_products = ["DIVING_GEAR", "DOLPHIN_SIGHTINGS"]
 else:
     #plot_products = ["PICNIC_BASKET", "UKULELE", "DIP", "BAGUETTE"]
-    plot_products = ["UKULELE"]
+    plot_products = ["BAGUETTE", "BERRIES"]
 
 plot_bid_and_ask = False
 plot_price = True
@@ -146,12 +147,13 @@ with open(filename, "r") as f:
                 timestamps[product].append(timestamp)
                 prices[product].append(float(line[-2]))
 
-            # if timestamp not in timestamps[product]:
-            #     timestamps[product].append(timestamp)
+            if timestamp not in timestamps[product] and resultsMode:
+                timestamps[product].append(timestamp)
             
             if timestamp in timestamps[product]:
                 pnls[product].append(float(line[-1]))
-                #prices[product].append(float(line[-2]))
+                if resultsMode:
+                    prices[product].append(float(line[-2]))
 
             # else:
             #     print("Unknown timestamp: " + str(timestamp) + " for product " + product + " in line " + str.join(";", line))
